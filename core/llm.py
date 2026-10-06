@@ -9,6 +9,7 @@
 import json
 import logging
 import re
+import time
 from collections.abc import Iterator
 
 import litellm
@@ -22,16 +23,30 @@ litellm.suppress_debug_info = True
 log = logging.getLogger("cognia.llm")
 
 
+# Modelo -> momento hasta el que se salta por haber agotado su cuota (rate limit).
+_cooldown: dict[str, float] = {}
+
+
+def _on_failure(model: str, error: Exception) -> str:
+    """Registra el fallo y, si es por cuota, pone el modelo en enfriamiento."""
+    if isinstance(error, litellm.RateLimitError):
+        wait = re.search(r"retry in ([\d.]+)s", str(error))
+        _cooldown[model] = time.time() + (float(wait.group(1)) if wait else 60)
+    summary = f"{model}: {type(error).__name__}: {str(error).splitlines()[0][:150]}"
+    log.warning("Falló %s", summary)
+    return summary
+
+
 def _candidates(model: str | None) -> list[str]:
     chain = [model or config.default_model(), *config.fallback_chain()]
-    seen, out = set(), []
+    seen, ready, cooling = set(), [], []
     for m in chain:
         # Cualquier modelo vale (aunque no esté en PROVIDERS) si su proveedor tiene key.
         provider = config.provider_of(m)
         if m not in seen and provider in config.PROVIDERS and config.has_key(provider):
             seen.add(m)
-            out.append(m)
-    return out
+            (cooling if _cooldown.get(m, 0) > time.time() else ready).append(m)
+    return ready + cooling  # los que están en enfriamiento solo como último recurso
 
 
 def chat(messages: list[dict], model: str | None = None, tools: list[dict] | None = None,
@@ -43,14 +58,15 @@ def chat(messages: list[dict], model: str | None = None, tools: list[dict] | Non
     """
     errors = []
     for m in _candidates(model):
+        # Gemini 3+ deprecó temperature (recomienda guiar el muestreo desde el prompt).
+        sampling = {} if config.provider_of(m) == "gemini" else {"temperature": temperature}
         try:
             return litellm.completion(
                 model=m, messages=messages, tools=tools or None,
-                temperature=temperature, num_retries=1, **kwargs,
+                num_retries=0, **sampling, **kwargs,
             )
         except Exception as e:  # noqa: BLE001 — cualquier fallo pasa al siguiente modelo
-            log.warning("Modelo %s falló: %s", m, e)
-            errors.append(f"{m}: {type(e).__name__}: {str(e)[:200]}")
+            errors.append(_on_failure(m, e))
     raise RuntimeError("Todos los modelos fallaron:\n" + "\n".join(errors))
 
 
@@ -64,15 +80,14 @@ def stream(messages: list[dict], model: str | None = None, **kwargs) -> Iterator
     errors = []
     for m in _candidates(model):
         try:
-            response = litellm.completion(model=m, messages=messages, stream=True, num_retries=1, **kwargs)
+            response = litellm.completion(model=m, messages=messages, stream=True, num_retries=0, **kwargs)
             for chunk in response:
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
             return
         except Exception as e:  # noqa: BLE001
-            log.warning("Streaming con %s falló: %s", m, e)
-            errors.append(f"{m}: {e}")
+            errors.append(_on_failure(m, e))
     raise RuntimeError("Todos los modelos fallaron:\n" + "\n".join(errors))
 
 

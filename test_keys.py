@@ -42,7 +42,8 @@ def main() -> None:
         for model in cfg["models"]:
             print(f" {model}")
             check("texto", lambda m=model: litellm.completion(
-                model=m, messages=[{"role": "user", "content": "Responde solo: OK"}], max_tokens=20,
+                # max_tokens holgado: los modelos con "thinking" gastan tokens razonando antes de responder.
+                model=m, messages=[{"role": "user", "content": "Responde solo: OK"}], max_tokens=1000,
             ).choices[0].message.content.strip()[:30])
             check("tools", lambda m=model: litellm.completion(
                 model=m, messages=[{"role": "user", "content": "¿Cuánto es 2+3? Usa la herramienta."}], tools=[TOOL],

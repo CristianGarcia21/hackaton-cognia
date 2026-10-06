@@ -11,6 +11,7 @@ service-account*.json
 
 # ---- Entorno Python / uv ----
 .venv/
+.venv-*/
 venv/
 env/
 __pycache__/

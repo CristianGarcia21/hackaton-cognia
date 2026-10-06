@@ -9,6 +9,7 @@ las herramientas, el RAG, la orquestación y la UI ya funcionan; el día del ret
 uv sync                          # crea el entorno e instala dependencias
 cp .env.example .env             # pon tus API keys
 uv run python test_keys.py       # verifica cada key (texto, tools, embeddings)
+uv run python list_models.py     # lista los modelos vigentes de cada proveedor
 uv run streamlit run app.py      # abre la UI
 ```
 
@@ -28,6 +29,7 @@ agents/
   __init__.py      registro TEAMS (lo que aparece en la UI)
 app.py             UI Streamlit: chat, subida de archivos, selector de modelo/equipo/modo, pasos en vivo
 test_keys.py       chequeo de API keys
+list_models.py     modelos disponibles hoy en cada proveedor (filtro: list_models.py llama)
 ```
 
 ## Día del reto: receta rápida
@@ -67,6 +69,14 @@ test_keys.py       chequeo de API keys
 Gemini es el principal. Groq, OpenRouter (modelos `:free`), Cerebras y Mistral tienen planes gratuitos.
 Si un modelo falla (cuota, caída), `llm.chat` pasa al siguiente proveedor con key. Para cambiar el orden,
 define `DEFAULT_MODEL` y `FALLBACK_MODELS` en el `.env`.
-Los nombres de modelo cambian seguido: si `test_keys.py` marca uno en rojo, actualízalo en `core/config.py`.
+Si un modelo agota su cuota, entra en enfriamiento el tiempo que indique el proveedor y mientras tanto
+se usa el siguiente. El plan gratis de Gemini permite solo ~5 peticiones/min por modelo; para una demo con
+muchas llamadas conviene `DEFAULT_MODEL=groq/openai/gpt-oss-120b` (mucho más rápido y con más cuota).
+
+Los nombres de modelo cambian seguido: si `test_keys.py` marca uno en rojo, corre `list_models.py`
+y actualízalo en `core/config.py`.
+
+> Si usas WSL y Windows a la vez, no compartan `.venv`: en Windows usa
+> `$env:UV_PROJECT_ENVIRONMENT=".venv-windows"` antes de `uv run`.
 
 > `run_python` ejecuta código localmente y no es un sandbox. Sirve para la demo, pero no lo expongas a usuarios externos.

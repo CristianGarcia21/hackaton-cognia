@@ -2,7 +2,8 @@
 
 Para agregar un proveedor nuevo basta con añadir una entrada a PROVIDERS.
 Los nombres de modelo usan el formato de LiteLLM: "<proveedor>/<modelo>".
-Si un modelo deja de existir, cámbialo aquí o en el .env (DEFAULT_MODEL / FALLBACK_MODELS).
+Si un modelo deja de existir, corre `uv run python list_models.py` para ver los vigentes
+y cámbialo aquí o en el .env (DEFAULT_MODEL / FALLBACK_MODELS).
 """
 
 import os
@@ -15,25 +16,25 @@ PROVIDERS: dict[str, dict] = {
     "gemini": {
         "env": "GEMINI_API_KEY",
         "models": [
-            "gemini/gemini-2.5-flash",
-            "gemini/gemini-2.5-pro",
-            "gemini/gemini-2.5-flash-lite",
+            "gemini/gemini-3.5-flash",
+            "gemini/gemini-3.8-flash",
         ],
         "signup": "https://aistudio.google.com/apikey",
     },
     "groq": {
         "env": "GROQ_API_KEY",
         "models": [
-            "groq/llama-3.3-70b-versatile",
             "groq/openai/gpt-oss-120b",
+            "groq/qwen/qwen3.8-27b",
+            "groq/openai/gpt-oss-20b",
         ],
         "signup": "https://console.groq.com/keys",
     },
     "openrouter": {
         "env": "OPENROUTER_API_KEY",
         "models": [
-            "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-            "openrouter/deepseek/deepseek-chat-v3-0324:free",
+            "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+            "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
         ],
         "signup": "https://openrouter.ai/keys",
     },
@@ -45,14 +46,14 @@ PROVIDERS: dict[str, dict] = {
     "nvidia_nim": {
         "env": "NVIDIA_NIM_API_KEY",
         "models": [
-            "nvidia_nim/meta/llama-3.3-70b-instruct",
-            "nvidia_nim/qwen/qwen2.5-coder-32b-instruct",
+            "nvidia_nim/nvidia/nemotron-3-super-120b-a12b",
+            "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",
         ],
         "signup": "https://build.nvidia.com",
     },
     "cohere": {
         "env": "COHERE_API_KEY",
-        "models": ["cohere/command-a-03-2025"],
+        "models": ["cohere/command-a-plus-05-2026", "cohere/command-a-03-2025"],
         "signup": "https://dashboard.cohere.com/api-keys",
     },
     "mistral": {
