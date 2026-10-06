@@ -1,0 +1,7 @@
+[server]
+# No intenta abrir el navegador (en WSL falla con "gio: Operation not supported")
+# y no pregunta el correo al arrancar. Abre a mano la URL que imprime.
+headless = true
+
+[browser]
+gatherUsageStats = false

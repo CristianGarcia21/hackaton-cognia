@@ -10,7 +10,7 @@ uv sync                          # crea el entorno e instala dependencias
 cp .env.example .env             # pon tus API keys
 uv run python test_keys.py       # verifica cada key (texto, tools, embeddings)
 uv run python list_models.py     # lista los modelos vigentes de cada proveedor
-uv run streamlit run app.py      # abre la UI
+uv run python run.py             # abre la UI (http://localhost:8501)
 ```
 
 ## Estructura
@@ -27,6 +27,7 @@ agents/
   reto.py          ← AQUÍ VA EL RETO
   base_team.py     equipo genérico: investigador, analista, documentos, redactor
   __init__.py      registro TEAMS (lo que aparece en la UI)
+run.py             lanzador de la UI (evita un deadlock de imports en WSL)
 app.py             UI Streamlit: chat, subida de archivos, selector de modelo/equipo/modo, pasos en vivo
 test_keys.py       chequeo de API keys
 list_models.py     modelos disponibles hoy en cada proveedor (filtro: list_models.py llama)

@@ -1,4 +1,4 @@
-"""UI de demo. Ejecutar con:  uv run streamlit run app.py"""
+"""UI de demo. Ejecutar con:  uv run python run.py"""
 
 import time
 from pathlib import Path
