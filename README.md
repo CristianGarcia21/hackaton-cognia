@@ -77,7 +77,13 @@ muchas llamadas conviene `DEFAULT_MODEL=groq/openai/gpt-oss-120b` (mucho más r�
 Los nombres de modelo cambian seguido: si `test_keys.py` marca uno en rojo, corre `list_models.py`
 y actualízalo en `core/config.py`.
 
-> Si usas WSL y Windows a la vez, no compartan `.venv`: en Windows usa
-> `$env:UV_PROJECT_ENVIRONMENT=".venv-windows"` antes de `uv run`.
+> **Windows + WSL en la misma carpeta:** no pueden compartir `.venv` (uno es de Windows y otro de Linux).
+> Windows usa `.venv` normal. En WSL agrega esto a `~/.zshrc` (o `~/.bashrc` con `PROMPT_COMMAND`)
+> para que en discos de Windows use `.venv-linux`:
+> ```zsh
+> _uv_env_por_disco() { [[ $PWD == /mnt/* ]] && export UV_PROJECT_ENVIRONMENT=.venv-linux || unset UV_PROJECT_ENVIRONMENT }
+> autoload -U add-zsh-hook; add-zsh-hook chpwd _uv_env_por_disco; _uv_env_por_disco
+> ```
+> No hace falta activar el entorno: `uv run` lo usa solo.
 
 > `run_python` ejecuta código localmente y no es un sandbox. Sirve para la demo, pero no lo expongas a usuarios externos.
