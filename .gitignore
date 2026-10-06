@@ -1,0 +1,47 @@
+# ---- Secretos (NUNCA subir) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets*.json
+credentials*.json
+service-account*.json
+.streamlit/secrets.toml
+
+# ---- Entorno Python / uv ----
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---- Datos generados en tiempo de ejecución ----
+data/uploads/
+data/kb/
+outputs/
+*.log
+*.npy
+
+# ---- Notebooks ----
+.ipynb_checkpoints/
+
+# ---- IDE / sistema operativo ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Claude Code (configuración local) ----
+.claude/
+CLAUDE.local.md
