@@ -39,6 +39,51 @@ const contenido = $("inspector-contenido");
 const inspector = $("inspector");
 const resumenSummary = $("inspector-resumen");
 const RESUMEN_BASE = resumenSummary.textContent;
+const fondo = $("inspector-fondo");
+const abrirBoton = $("abrir-inspector");
+const cerrarBoton = $("cerrar-inspector");
+const insignia = $("inspector-insignia");
+let sinVer = 0; // pasos (tools y trazas) que llegaron con el panel cerrado
+
+const abierto = () => !inspector.hidden;
+
+function pintarInsignia() {
+  insignia.hidden = sinVer === 0;
+  insignia.textContent = sinVer > 99 ? "99+" : String(sinVer);
+  abrirBoton.setAttribute("aria-label", sinVer ? `Inspector, ${sinVer} pasos nuevos` : "Inspector");
+}
+
+function contarPaso() {
+  if (abierto()) return;
+  sinVer++;
+  pintarInsignia();
+}
+
+function abrirInspector() {
+  inspector.hidden = false;
+  fondo.hidden = false;
+  abrirBoton.setAttribute("aria-expanded", "true");
+  sinVer = 0;
+  pintarInsignia();
+  pintarResumen();
+  cerrarBoton.focus();
+}
+
+function cerrarInspector() {
+  if (!abierto()) return;
+  inspector.hidden = true;
+  fondo.hidden = true;
+  abrirBoton.setAttribute("aria-expanded", "false");
+  pintarResumen();
+  abrirBoton.focus(); // el foco vuelve al botón que lo abrió
+}
+
+abrirBoton.addEventListener("click", () => (abierto() ? cerrarInspector() : abrirInspector()));
+cerrarBoton.addEventListener("click", cerrarInspector);
+fondo.addEventListener("click", cerrarInspector);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") cerrarInspector();
+});
 const VACIO = contenido.firstElementChild; // «Las trazas de los turnos aparecerán aquí.»
 
 const turnos = new Map(); // turn_id -> { raiz, pregunta, total, listaTools, cascada, contexto, tools: [], nTools, ms }
@@ -85,9 +130,9 @@ function actualizarResumen(id) {
 
 function pintarResumen() {
   // Abierto, el detalle ya está a la vista; cerrado, el resumen del último turno sustituye al texto genérico.
-  resumenSummary.textContent = !inspector.open && ultimoResumen ? `· ${ultimoResumen}` : RESUMEN_BASE;
+  // El resumen del último turno se ve en la cabecera del panel (y como contador en el botón si está cerrado).
+  resumenSummary.textContent = ultimoResumen ? `· ${ultimoResumen}` : RESUMEN_BASE;
 }
-inspector.addEventListener("toggle", pintarResumen);
 
 // ============================ Tools ============================
 
@@ -165,14 +210,22 @@ bus.addEventListener("transcript", (ev) => {
   const e = ev.detail;
   if (e.is_final && e.speaker !== "Agente") recordarPregunta(e.text, e.turn_id);
 });
-bus.addEventListener("tool", (ev) => pintarTool(ev.detail));
-bus.addEventListener("trace", (ev) => pintarTraza(ev.detail));
+bus.addEventListener("tool", (ev) => {
+  pintarTool(ev.detail);
+  if (ev.detail.status === "running") contarPaso();
+});
+bus.addEventListener("trace", (ev) => {
+  pintarTraza(ev.detail);
+  contarPaso();
+});
 bus.addEventListener("ready", () => {
   turnos.clear();
   preguntas.clear();
   ultimaPregunta = null;
   ultimoResumen = null;
   contenido.replaceChildren(VACIO);
+  sinVer = 0;
+  pintarInsignia();
   pintarResumen();
 });
 

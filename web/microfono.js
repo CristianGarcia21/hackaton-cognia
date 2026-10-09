@@ -24,10 +24,15 @@ const RESTRICCIONES = {
 
 const estado = document.getElementById("estado");
 const voz = document.getElementById("voz");
+const esfera = document.getElementById("microfono");
 const onda = crearVisualizador(document.getElementById("onda"), {
   alDetectarVoz(hablando) {
     voz.hidden = !hablando;
     estado.classList.toggle("con-voz", hablando);
+  },
+  // La esfera crece y brilla con la voz (styles.css usa --nivel).
+  alNivel(nivel) {
+    esfera.style.setProperty("--nivel", nivel.toFixed(3));
   },
 });
 

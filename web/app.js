@@ -99,7 +99,7 @@ function ponerConexion(estado, texto) {
 
 const TEXTO_ESTADO = {
   desconectado: "Sin conexión con el agente",
-  inactivo: "En espera",
+  inactivo: "Te escucho cuando hables",
   escuchando: "Escuchando…",
   pensando: "Pensando…",
   ejecutando_tool: "Consultando datos…",
@@ -120,11 +120,13 @@ const TEXTO_TOOL = {
 };
 
 let estadoActual = "desconectado";
+let microfonoActivo = false;
 
 function ponerEstado(estado, turnId) {
   estadoActual = estado;
   ui.estado.dataset.estado = estado;
-  ui.estadoTexto.textContent = TEXTO_ESTADO[estado] ?? estado;
+  ui.estadoTexto.textContent = estado === "inactivo" && !microfonoActivo
+    ? "Toca la esfera para hablar" : TEXTO_ESTADO[estado] ?? estado;
   ui.estadoTurno.textContent = turnId ? `Turno ${turnId}` : "";
 }
 
@@ -262,12 +264,13 @@ const manejadores = {
 
 // ============================ Micrófono (start/stop; la captura de audio es el issue #5) ============================
 
-let microfonoActivo = false;
 
 function marcarMicrofono(activo) {
   microfonoActivo = activo;
   ui.microfono.setAttribute("aria-pressed", String(activo));
   ui.microfonoTexto.textContent = activo ? "Detener micrófono" : "Activar micrófono";
+  ui.microfono.setAttribute("aria-label", activo ? "Detener" : "Empezar a escuchar");
+  if (estadoActual === "inactivo") ponerEstado("inactivo"); // el texto de reposo depende del micrófono
 }
 
 // #5 emite "microfono:error" si getUserMedia falla: se revierte el botón y se avisa al backend.

@@ -3,6 +3,7 @@
 // Todo dato del servidor se pinta con textContent.
 
 import { bus, enviar } from "./app.js";
+import { crearCajon } from "./cajon.js";
 
 const $ = (id) => document.getElementById(id);
 const resumen = $("brief-resumen");
@@ -19,8 +20,12 @@ const CIFRAS = [
   ["municipios", "municipios"],
 ];
 const numero = (n) => Number(n).toLocaleString("es-CO");
+// Las preguntas se muestran como texto (el reto pide sugerirlas, P3, no pulsarlas). Plan B si falla la voz:
+// true las vuelve botones que envían text_input.
+const PREGUNTAS_PULSABLES = false;
 
 let conectado = false;
+const cajon = crearCajon("fuente"); // panel lateral desde el botón «Fuente de datos» del menú
 
 function nodo(etiqueta, clase, texto) {
   const el = document.createElement(etiqueta);
@@ -51,6 +56,7 @@ bus.addEventListener("brief", ({ detail: b }) => {
   puntos.replaceChildren(...(b.key_points ?? []).map((p) => nodo("li", null, p)));
 
   preguntas.replaceChildren(...(b.questions ?? []).map((texto) => {
+    if (!PREGUNTAS_PULSABLES) return nodo("p", "pregunta pregunta-texto", `«${texto}»`);
     const boton = nodo("button", "pregunta", texto);
     boton.type = "button";
     boton.addEventListener("click", () => {
@@ -59,7 +65,9 @@ bus.addEventListener("brief", ({ detail: b }) => {
     return boton;
   }));
   bloquePreguntas.hidden = !(b.questions ?? []).length;
+  if (PREGUNTAS_PULSABLES) $("brief-ayuda").textContent = "Pulsa una pregunta o hazla por voz.";
   habilitarPreguntas();
+  cajon.avisar(); // punto en el botón: hay brief nuevo
 });
 
 bus.addEventListener("ready", () => {

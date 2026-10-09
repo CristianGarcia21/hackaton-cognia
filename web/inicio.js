@@ -9,6 +9,7 @@ import "./captura.js";
 import "./reproductor.js";
 import "./paneles.js";
 import "./brief.js";
+import "./carita.js";
 import "./inspector.js";
 
 iniciar();

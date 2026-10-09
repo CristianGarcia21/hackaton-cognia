@@ -20,9 +20,17 @@
     </div>
     <div class="barra-derecha">
       <span id="conexion" class="pastilla" data-estado="conectando" role="status">Conectando…</span>
-      <button id="microfono" class="boton-mic" type="button" aria-pressed="false" disabled>
-        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-        <span id="microfono-texto">Activar micrófono</span>
+      <button id="abrir-fuente" class="boton-inspector" type="button" aria-haspopup="dialog" aria-controls="fuente"
+              aria-expanded="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></svg>
+        <span>Fuente de datos</span>
+        <span id="fuente-nuevo" class="insignia insignia-punto" aria-label="Brief nuevo" hidden></span>
+      </button>
+      <button id="abrir-inspector" class="boton-inspector" type="button" aria-haspopup="dialog" aria-controls="inspector"
+              aria-expanded="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><path d="M4 6h16M4 12h10M4 18h6" /><circle cx="18" cy="16" r="3" /><path d="M20.2 18.2 22 20" /></svg>
+        <span>Inspector</span>
+        <span id="inspector-insignia" class="insignia" hidden></span>
       </button>
     </div>
   </header>
@@ -37,45 +45,47 @@
     <button id="cerrar-error" class="boton-icono" type="button" aria-label="Cerrar aviso">×</button>
   </div>
 
-  <section id="estado" class="estado" data-estado="desconectado" aria-label="Estado de la conversación">
-    <span class="estado-punto" aria-hidden="true"></span>
-    <span id="estado-texto" class="estado-texto" role="status" aria-atomic="true">Conectando con el agente…</span>
-    <!-- Onda de la voz en vivo (visualizador.js): micrófono del usuario; decorativa para lectores de pantalla. -->
-    <canvas id="onda" class="onda" aria-hidden="true"></canvas>
-    <span id="voz" class="voz" aria-hidden="true" hidden>Voz detectada</span>
-    <span id="estado-turno" class="estado-turno"></span>
-  </section>
-
   <main class="tablero">
-    <aside class="panel" aria-labelledby="titulo-brief">
-      <h2 id="titulo-brief">Fuente de datos</h2>
-      <div id="carga" class="carga" hidden>
-        <div class="carga-barra"><div id="carga-progreso"></div></div>
-        <p id="carga-texto" class="tenue"></p>
-      </div>
-      <div id="brief" class="brief" aria-live="polite">
-        <p id="brief-resumen" class="tenue">Esperando el resumen de la fuente…</p>
-        <ul id="brief-cifras" class="brief-cifras" aria-label="Cifras de la fuente"></ul>
-        <ul id="brief-puntos" class="brief-puntos"></ul>
-      </div>
-      <section id="brief-preguntas-bloque" class="brief-preguntas-bloque" aria-labelledby="titulo-preguntas" hidden>
-        <h2 id="titulo-preguntas">Pregúntale al agente</h2>
-        <p class="tenue brief-ayuda">Pulsa una pregunta o hazla por voz.</p>
-        <div id="brief-preguntas" class="brief-preguntas"></div>
-      </section>
-    </aside>
 
     <section class="panel panel-central" aria-labelledby="titulo-transcripcion">
+      <!-- Foco visual de la demo: la esfera es el botón del micrófono y lleva la voz en vivo adentro
+           (visualizador.js); a su lado, la carita de la emoción detectada (carita.js). -->
+      <section id="estado" class="estado" data-estado="desconectado" aria-label="Estado de la conversación">
+        <div class="escenario">
+          <button id="microfono" class="esfera" type="button" aria-pressed="false" aria-label="Empezar a escuchar" disabled>
+            <canvas id="onda" class="onda" aria-hidden="true"></canvas>
+            <svg aria-hidden="true" viewBox="0 0 24 24" class="esfera-icono icono-mic"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+            <span id="microfono-texto" class="solo-lector">Activar micrófono</span>
+          </button>
+          <figure class="carita">
+            <svg id="carita" viewBox="0 0 64 64" role="img" aria-label="Emoción detectada: ninguna aún">
+              <circle id="carita-cara" cx="32" cy="32" r="28" />
+              <path id="carita-ceja-i" class="carita-trazo" d="M18 20 L28 21" />
+              <path id="carita-ceja-d" class="carita-trazo" d="M36 21 L46 20" />
+              <ellipse id="carita-ojo-i" class="carita-ojo" cx="24" cy="28" rx="3" ry="3.5" />
+              <ellipse id="carita-ojo-d" class="carita-ojo" cx="40" cy="28" rx="3" ry="3.5" />
+              <path id="carita-boca" class="carita-boca" d="M22 43 Q32 43 42 43 Q32 44 22 43" />
+            </svg>
+            <figcaption id="carita-texto">Sin emoción aún</figcaption>
+          </figure>
+        </div>
+        <p class="estado-linea">
+          <span id="estado-texto" class="estado-texto" role="status" aria-atomic="true">Conectando con el agente…</span>
+          <span id="voz" class="voz" aria-hidden="true" hidden>Voz detectada</span>
+          <span id="estado-turno" class="estado-turno"></span>
+        </p>
+      </section>
       <div class="panel-cabecera">
         <h2 id="titulo-transcripcion">Transcripción</h2>
         <div id="hablantes" class="hablantes" role="group" aria-label="Hablantes"></div>
       </div>
       <ol id="transcripcion" class="transcripcion">
-        <li class="vacio">Pulsa «Activar micrófono» y habla. La conversación aparecerá aquí.</li>
+        <li class="vacio">Toca la esfera y habla. La conversación aparecerá aquí.</li>
       </ol>
       <button id="ir-al-final" class="ir-al-final" type="button" hidden>Ir a lo más reciente ↓</button>
       <!-- Plan B si falla la voz (#20): envía text_input y la respuesta sale en los mismos paneles. -->
-      <form id="texto-respaldo" class="texto-respaldo" autocomplete="off">
+      <!-- Chat de respaldo OCULTO por decisión del equipo (la demo es por voz). Plan B: quitar `hidden`. -->
+      <form id="texto-respaldo" class="texto-respaldo" autocomplete="off" hidden>
         <label for="texto-entrada">Escribir al agente</label>
         <div class="texto-fila">
           <input id="texto-entrada" type="text" maxlength="2000" placeholder="Escribe tu pregunta" disabled>
@@ -108,9 +118,39 @@
     </aside>
   </main>
 
-  <details id="inspector" class="inspector">
-    <summary>Inspector <span id="inspector-resumen" class="tenue">· traza de cada turno</span></summary>
+  <!-- Fuente de datos (P3): brief, cifras y preguntas sugeridas en un panel lateral (brief.js). -->
+  <div id="fuente-fondo" class="cajon-fondo" hidden></div>
+  <aside id="fuente" class="cajon" role="dialog" aria-modal="true" aria-labelledby="titulo-brief" hidden>
+    <div class="cajon-cabecera">
+      <h2 id="titulo-brief">Fuente de datos</h2>
+      <button id="cerrar-fuente" class="boton-icono" type="button" aria-label="Cerrar fuente de datos">×</button>
+    </div>
+    <div class="cajon-cuerpo">
+      <div id="carga" class="carga" hidden>
+        <div class="carga-barra"><div id="carga-progreso"></div></div>
+        <p id="carga-texto" class="tenue"></p>
+      </div>
+      <div id="brief" class="brief" aria-live="polite">
+        <p id="brief-resumen" class="tenue">Esperando el resumen de la fuente…</p>
+        <ul id="brief-cifras" class="brief-cifras" aria-label="Cifras de la fuente"></ul>
+        <ul id="brief-puntos" class="brief-puntos"></ul>
+      </div>
+      <section id="brief-preguntas-bloque" class="brief-preguntas-bloque" aria-labelledby="titulo-preguntas" hidden>
+        <h2 id="titulo-preguntas">Pregúntale al agente</h2>
+        <p id="brief-ayuda" class="tenue brief-ayuda">Hazle una de estas preguntas por voz.</p>
+        <div id="brief-preguntas" class="brief-preguntas"></div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Inspector (P6): panel lateral; se actualiza en vivo aunque esté cerrado (inspector.js). -->
+  <div id="inspector-fondo" class="cajon-fondo" hidden></div>
+  <aside id="inspector" class="cajon" role="dialog" aria-modal="true" aria-labelledby="titulo-inspector" hidden>
+    <div class="cajon-cabecera">
+      <h2 id="titulo-inspector">Inspector <span id="inspector-resumen" class="tenue">· traza de cada turno</span></h2>
+      <button id="cerrar-inspector" class="boton-icono" type="button" aria-label="Cerrar inspector">×</button>
+    </div>
     <div id="inspector-contenido"><p class="tenue">Las trazas de los turnos aparecerán aquí.</p></div>
-  </details>
+  </aside>
 </body>
 </html>

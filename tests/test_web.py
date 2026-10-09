@@ -51,6 +51,16 @@ def test_index_tiene_la_caja_de_texto_de_respaldo_y_el_resumen_del_inspector():
     assert '<form id="texto-respaldo"' in html
     assert '<label for="texto-entrada">' in html
     assert re.search(r'<input id="texto-entrada"[^>]*maxlength="2000"', html)
-    # El formulario va fuera del <details> del inspector: debe verse siempre.
-    assert html.index('id="texto-respaldo"') < html.index('<details id="inspector"')
+    # El formulario va fuera del panel lateral del inspector (un <aside> modal al final del documento).
+    assert html.index('id="texto-respaldo"') < html.index('<aside id="inspector"')
+
+
+def test_esfera_es_el_boton_del_microfono_y_hay_carita_e_inspector_lateral():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    esfera = re.search(r'<button id="microfono"[^>]*>', html).group(0)
+    assert 'class="esfera"' in esfera and 'aria-pressed="false"' in esfera and "aria-label=" in esfera
+    assert html.index('id="onda"') > html.index('id="microfono"')  # la modulación va DENTRO de la esfera
+    assert 'id="carita"' in html and 'role="img"' in html
+    assert re.search(r'<aside id="inspector"[^>]*role="dialog"[^>]*hidden', html)
+    assert 'id="abrir-inspector"' in html and 'id="inspector-insignia"' in html
     assert 'id="inspector-resumen"' in html

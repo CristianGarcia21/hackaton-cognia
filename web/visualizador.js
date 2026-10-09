@@ -5,6 +5,8 @@
 //     onda.conectar(analizador);   // cualquier AnalyserNode: el micrófono (microfono.js) o, en #5, el audio del agente
 //     onda.desconectar();          // vuelve a la línea en reposo
 //
+// Dentro de la esfera del micrófono (.esfera) dibuja un ESPECTRO de barras en el centro, en blanco, y `alNivel(0..1)` informa
+// el volumen suavizado para escalar la esfera y su brillo.
 // Solo lee el AnalyserNode: no modifica el audio que se envía al backend.
 // Con prefers-reduced-motion no se anima el espectro: solo se detecta la voz («Voz detectada»).
 
@@ -15,8 +17,12 @@ const FRECUENCIA_MAX = 4000;
 const UMBRAL_VOZ = 0.035; // RMS 0..1 a partir del cual hay alguien hablando
 const SOSTENER_VOZ_MS = 350; // evita parpadeo entre palabras
 
-export function crearVisualizador(canvas, { alDetectarVoz = () => {} } = {}) {
+const BARRAS_ESFERA = 14; // par: espectro simétrico (graves al centro)
+
+export function crearVisualizador(canvas, { alDetectarVoz = () => {}, alNivel = () => {} } = {}) {
   const ctx = canvas.getContext("2d");
+  const esfera = Boolean(canvas.closest(".esfera"));
+  let nivel = 0; // volumen suavizado (lerp) para que la esfera no tiemble
   let analizador = null;
   let frecuencias = null;
   let muestras = null;
@@ -41,10 +47,36 @@ export function crearVisualizador(canvas, { alDetectarVoz = () => {} } = {}) {
   }
 
   function barras(dpr) {
+    if (esfera) return BARRAS_ESFERA;
     return Math.max(8, Math.floor(canvas.width / ((ANCHO_BARRA + SEPARACION) * dpr))) & ~1; // par: simétrica
   }
 
+  function pintarEsfera(niveles) {
+    // Barras verticales centradas, recortadas al círculo: el espectro de la voz llena la esfera.
+    const { width: w, height: h } = canvas;
+    const r = Math.min(w, h) / 2;
+    const ancho = (r * 1.2) / niveles.length; // el espectro ocupa ~60 % del diámetro
+    const barra = ancho * 0.6;
+    const inicio = w / 2 - (ancho * niveles.length) / 2 + (ancho - barra) / 2;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, r * 0.92, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = "#ffffff";
+    niveles.forEach((v, i) => {
+      const alto = Math.max(barra, v * r * 1.1);
+      ctx.globalAlpha = 0.55 + 0.45 * Math.min(1, v * 1.4);
+      ctx.beginPath();
+      ctx.roundRect(inicio + i * ancho, h / 2 - alto / 2, barra, alto, barra / 2);
+      ctx.fill();
+    });
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   function pintar(niveles) {
+    if (esfera) return pintarEsfera(niveles);
     const dpr = window.devicePixelRatio || 1;
     const { width: w, height: h } = canvas;
     const paso = (ANCHO_BARRA + SEPARACION) * dpr;
@@ -65,6 +97,10 @@ export function crearVisualizador(canvas, { alDetectarVoz = () => {} } = {}) {
   }
 
   function dibujarReposo() {
+    if (esfera) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
     pintar(new Array(barras(window.devicePixelRatio || 1)).fill(0));
   }
 
@@ -83,6 +119,8 @@ export function crearVisualizador(canvas, { alDetectarVoz = () => {} } = {}) {
     const hayVoz = ahora < vozHasta;
     if (hayVoz !== hablando) alDetectarVoz((hablando = hayVoz));
     if (movimientoReducido.matches) return;
+    nivel += (Math.min(1, rms * 6) - nivel) * 0.2;
+    alNivel(nivel);
 
     // Espectro de la banda de voz, espejado desde el centro (graves al centro, agudos a los lados).
     analizador.getByteFrequencyData(frecuencias);
@@ -118,6 +156,8 @@ export function crearVisualizador(canvas, { alDetectarVoz = () => {} } = {}) {
     cancelAnimationFrame(animacion);
     analizador = null;
     alturas = [];
+    nivel = 0;
+    alNivel(0);
     if (hablando) alDetectarVoz((hablando = false));
     dibujarReposo();
   }
