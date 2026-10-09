@@ -1,0 +1,28 @@
+# Secretos: NUNCA dentro de la imagen (las keys van como variables de entorno en Railway)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets*.json
+credentials*.json
+service-account*.json
+
+# Entornos y cachés locales
+.venv
+.venv-*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+
+# Datos generados y cosas que no necesita el servidor
+outputs
+data/uploads
+.git
+.github
+.claude
+.vscode
+.idea
+docs
+tests

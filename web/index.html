@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cognia · Agente Vocal</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: grid;
+           place-items: center; min-height: 100vh; margin: 0; }
+    main { max-width: 32rem; padding: 2rem; text-align: center; }
+    #estado { font-family: monospace; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <!-- Página provisional del esqueleto (issue #2). Carlos la reemplaza en el issue #4. -->
+  <main>
+    <h1>Cognia · Agente Vocal Cognitivo</h1>
+    <p id="estado">Conectando…</p>
+  </main>
+  <script>
+    const estado = document.getElementById("estado");
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/voz`);
+    ws.onmessage = (m) => {
+      const e = JSON.parse(m.data);
+      if (e.type === "ready") estado.textContent = `Conectado · sesión ${e.session_id} · voz ${e.voice}`;
+    };
+    ws.onclose = () => { estado.textContent = "Desconectado"; };
+  </script>
+</body>
+</html>

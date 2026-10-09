@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "ddgs>=9.16.0",
+    "fastapi>=0.143.0",
     "httpx>=0.28.1",
     "litellm>=1.104.0",
     "numpy>=2.5.3",
@@ -15,14 +16,20 @@ dependencies = [
     "pypdf>=6.19.0",
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.4",
-    "streamlit>=1.65.0",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
 ]
+ui = [
+    "streamlit>=1.65.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.uv]
+default-groups = ["dev", "ui"]
