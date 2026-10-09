@@ -37,9 +37,15 @@ async def _sin_deepgram(_funciones):
     raise ErrorAgente("Deepgram deshabilitado en los tests")
 
 
+async def _sin_stt():
+    from server.deepgram_stt import ErrorSTT
+    raise ErrorSTT("STT deshabilitado en los tests")
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(main, "_abrir_agente", _sin_deepgram)
+    monkeypatch.setattr(main, "_abrir_stt", _sin_stt)
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
     monkeypatch.setattr(main, "estado", main.Estado())
     componentes.clear()
@@ -110,8 +116,9 @@ def test_ws_mensaje_invalido_devuelve_error_y_sigue_abierto(client):
         assert isinstance(error, ev.ErrorEvento) and error.where == "cliente" and error.recoverable
         ws.send_text('{"type": "start"}')
         ws.send_bytes(bytes(640))  # audio: se acepta sin romper
-        voz = ev.parse_servidor(ws.receive_text())  # sin Deepgram: error de voz recuperable, la sesión sigue
-        assert isinstance(voz, ev.ErrorEvento) and voz.where == "voz" and voz.recoverable
+        # Sin Deepgram: errores recuperables de voz y de transcripción (en cualquier orden); la sesión sigue.
+        errores = [ev.parse_servidor(ws.receive_text()) for _ in range(2)]
+        assert {e.where for e in errores} == {"voz", "transcripcion"} and all(e.recoverable for e in errores)
         ws.send_text("[]")
         assert ev.parse_servidor(ws.receive_text()).where == "cliente"
 

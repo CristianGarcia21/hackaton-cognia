@@ -2,6 +2,7 @@
 
     T1 receptor   lee el WebSocket del navegador: audio → cola de audio; start/stop/text_input
     T2 agente     WebSocket con Deepgram Voice Agent: envía audio (o KeepAlive) y despacha sus eventos
+    T3 STT        WebSocket con Deepgram Listen (diarize): transcripción por hablante para el panel (#11)
     T4 tools      una tarea por FunctionCallRequest → hub MCP → FunctionCallResponse (cancelable)
     T7 emisor     ÚNICA tarea que escribe en el WebSocket del navegador (cola de salida)
 
@@ -13,15 +14,18 @@ import asyncio
 import contextlib
 import json
 import logging
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import websockets
 from fastapi import WebSocket
+from rapidfuzz import fuzz
 
 from server import events as ev
 from server import tools_registry
 from server.deepgram_agent import ErrorAgente
+from server.deepgram_stt import ErrorSTT, segmentos
 from server.mcp_hub import HubMCP
 from server.states import Cambio, Evento, Maquina
 
@@ -45,13 +49,19 @@ class _Audio:
 
 class Sesion:
     def __init__(self, ws: WebSocket, session_id: str, hub: HubMCP,
-                 abrir_agente: Callable[[list[dict]], Awaitable]):
+                 abrir_agente: Callable[[list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None):
         self.ws, self.session_id, self.hub = ws, session_id, hub
         self._abrir_agente = abrir_agente  # funciones -> ConexionAgente (inyectable en tests)
+        self._abrir_stt = abrir_stt  # () -> ConexionSTT con diarización; None = sin panel diarizado
+        self.stt = None
+        self._audio_stt: asyncio.Queue[bytes] = asyncio.Queue(MAX_AUDIO_EN_COLA)
+        self._tarea_stt: asyncio.Task | None = None
+        self._textos_pendientes = 0  # text_input aún sin su ConversationText: esos sí van al panel
+        self._fragmento = 0  # fragmento del STT: parciales y final comparten segment_id
+        self._dichos_agente: deque[str] = deque(maxlen=3)  # para reconocer su eco en el micrófono
         self.maquina = Maquina()
         self.agente = None
         self.microfono = False
-        self.transcribir_usuario = True  # el STT diarizado (#11) lo apaga para no duplicar el panel
         self.latencias: dict[str, float] = {}  # último LatencyReport (para la traza, #19)
         self._salida: asyncio.Queue = asyncio.Queue()
         self._audio_pendiente = 0  # bytes de TTS en _salida (los eventos JSON nunca se descartan)
@@ -86,6 +96,8 @@ class Sesion:
         finally:
             if self.agente is not None:
                 await self.agente.cerrar()
+            if self.stt is not None:
+                await self.stt.cerrar()
 
     # ------------------------------- T7 emisor -------------------------------
 
@@ -126,8 +138,11 @@ class Sesion:
             if mensaje["type"] == "websocket.disconnect":
                 raise _Fin
             if mensaje.get("bytes") is not None:
+                pcm = mensaje["bytes"]
                 if self.microfono and self.agente is not None:
-                    self._poner_audio(mensaje["bytes"])
+                    _poner(self._audio, pcm)
+                if self.microfono and self.stt is not None:
+                    _poner(self._audio_stt, pcm)  # el mismo audio: el eco del agente se filtra por texto
                 continue
             recibido = ev.parse_cliente_seguro(mensaje.get("text") or "")
             if isinstance(recibido, ev.ErrorEvento):
@@ -135,17 +150,62 @@ class Sesion:
             elif isinstance(recibido, ev.Start):
                 self.microfono = True
                 self._asegurar_agente()
+                self._asegurar_stt()
             elif isinstance(recibido, ev.Stop):
                 self.microfono = False
             elif isinstance(recibido, ev.TextInput):
+                self._textos_pendientes += 1
                 self._asegurar_agente()
                 await self._cuando_agente({"type": "InjectUserMessage", "content": recibido.text})
 
-    def _poner_audio(self, pcm: bytes) -> None:
-        if self._audio.full():
-            with contextlib.suppress(asyncio.QueueEmpty):
-                self._audio.get_nowait()
-        self._audio.put_nowait(pcm)
+    # ------------------------------- T3 STT diarizado -------------------------------
+
+    def _asegurar_stt(self) -> None:
+        if self._abrir_stt is not None and (self._tarea_stt is None or self._tarea_stt.done()):
+            self._tarea_stt = self._tarea(self._transcribir(), "T3-stt")
+
+    async def _transcribir(self) -> None:
+        try:
+            self.stt = await self._abrir_stt()
+        except ErrorSTT as e:
+            log.warning("Sesión %s sin transcripción diarizada: %s", self.session_id, e)
+            self.emitir(ev.ErrorEvento(where="transcripcion", message=f"Transcripción por hablante no disponible: "
+                                       f"{e}. Se muestra la del agente.", recoverable=True))
+            return
+        envio = self._tarea(self._enviar_audio_stt(), "T3-audio")
+        try:
+            async for resultado in self.stt:
+                try:
+                    self._resultado_stt(resultado)
+                except Exception:  # noqa: BLE001
+                    log.exception("Resultado del STT no procesado")
+        finally:
+            envio.cancel()
+            await self.stt.cerrar()
+            self.stt = None
+
+    async def _enviar_audio_stt(self) -> None:
+        while (stt := self.stt) is not None:
+            try:
+                pcm = await asyncio.wait_for(self._audio_stt.get(), KEEPALIVE_S)
+            except TimeoutError:
+                pcm = None
+            try:
+                await (stt.keepalive() if pcm is None else stt.enviar_audio(pcm))
+            except websockets.ConnectionClosed:
+                return
+
+    def _resultado_stt(self, d: dict) -> None:
+        final = bool(d.get("is_final"))
+        for i, s in enumerate(segmentos(d)):
+            if _es_eco(s.texto, self._dichos_agente):
+                log.info("Eco del agente descartado del panel: %.60s", s.texto)
+                continue
+            self.emitir(ev.Transcript(segment_id=f"h-{self._fragmento}-{i}", turn_id=self.maquina.turn_id,
+                                      speaker=f"Hablante {s.hablante + 1}", text=s.texto, start=s.inicio,
+                                      end=s.fin, is_final=final))
+        if final:
+            self._fragmento += 1
 
     # ------------------------------- T2 agente -------------------------------
 
@@ -254,13 +314,16 @@ class Sesion:
         turno = self.maquina.turn_id
         if rol == "user":
             self._cambio(self.maquina.aplicar(Evento.USUARIO_TERMINA))
-            if self.transcribir_usuario:
+            # Por voz, el panel lo llena el STT diarizado; si no está (o fue texto escrito), este texto.
+            if self.stt is None or self._textos_pendientes > 0:
+                self._textos_pendientes = max(0, self._textos_pendientes - 1)
                 self.emitir(ev.Transcript(segment_id=f"u-{self._segmentos}", turn_id=turno, speaker="Hablante 1",
                                           text=texto, is_final=True))
         elif rol == "assistant":
             if self.maquina.estado is E.ESCUCHANDO:
                 turno -= 1  # texto del turno interrumpido: se muestra en su turno, no cambia el estado
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
+            self._dichos_agente.append(texto)
             self.emitir(ev.AgentText(turn_id=turno, text=texto))
             self.emitir(ev.Transcript(segment_id=f"a-{self._segmentos}", turn_id=turno, speaker="Agente",
                                       text=texto, is_final=True))
@@ -307,6 +370,25 @@ class Sesion:
         except asyncio.CancelledError:
             # FunctionCallCancelled o barge-in: Deepgram descarta una respuesta tardía; no se envía nada.
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status="cancelled"))
+
+
+def _poner(cola: asyncio.Queue, pcm: bytes) -> None:
+    """Encola audio; si la cola está llena (Deepgram atrasado), descarta lo más viejo."""
+    if cola.full():
+        with contextlib.suppress(asyncio.QueueEmpty):
+            cola.get_nowait()
+    cola.put_nowait(pcm)
+
+
+UMBRAL_ECO = 80
+
+
+def _es_eco(texto: str, dichos: deque) -> bool:
+    """¿Lo que oyó el micrófono es la voz del agente saliendo por los parlantes? El navegador cancela casi
+    todo el eco; lo que se cuela se reconoce porque repite lo que el agente acaba de decir."""
+    if len(texto) < 12:
+        return False
+    return any(fuzz.partial_ratio(texto.lower(), d.lower()) >= UMBRAL_ECO for d in dichos)
 
 
 def _args_para_ui(argumentos) -> dict:

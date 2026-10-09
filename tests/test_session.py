@@ -384,3 +384,172 @@ def test_un_bug_al_abrir_deepgram_avisa_y_no_deja_mensajes_colgados():
 
     ws, _, _ = correr(con_sesion(prueba, falla=RuntimeError("bug")))
     assert ws.de_tipo(ev.ErrorEvento)[0].where == "voz"
+
+
+# ------------------------------- STT diarizado (#11) -------------------------------
+
+from server import deepgram_stt as STT  # noqa: E402
+
+
+def resultado(palabras, final=True):
+    return {"type": "Results", "is_final": final, "channel": {"alternatives": [{"words": [
+        {"word": w.lower(), "punctuated_word": w, "speaker": h, "start": i * 0.5, "end": i * 0.5 + 0.4}
+        for i, (h, w) in enumerate(palabras)]}]}}
+
+
+class STTFalso:
+    def __init__(self):
+        self.audio: list[bytes] = []
+        self.keepalives = 0
+        self.cerrado = False
+        self._entrada: asyncio.Queue = asyncio.Queue()
+
+    def empujar(self, *rs):
+        for r in rs:
+            self._entrada.put_nowait(r)
+
+    async def enviar_audio(self, pcm):
+        self.audio.append(pcm)
+
+    async def keepalive(self):
+        self.keepalives += 1
+
+    def __aiter__(self):
+        return self._recibir()
+
+    async def _recibir(self):
+        while (m := await self._entrada.get()) is not None:
+            yield m
+
+    async def cerrar(self):
+        self.cerrado = True
+        self._entrada.put_nowait(None)
+
+
+async def con_stt(prueba, stt, falla=None):
+    hub = hub_de_prueba()
+    await hub.iniciar()
+    agente = AgenteFalso()
+
+    async def abrir(_):
+        return agente
+
+    async def abrir_stt():
+        if falla:
+            raise falla
+        return stt
+
+    ws = WSFalso()
+    sesion = S.Sesion(ws, "s1", hub, abrir, abrir_stt)
+    tarea = asyncio.create_task(sesion.correr([]))
+    try:
+        await prueba(ws, sesion, agente)
+        return ws
+    finally:
+        ws.cerrar()
+        await asyncio.wait_for(tarea, 3)
+        await hub.cerrar()
+
+
+def test_segmentos_separa_por_hablante():
+    segs = STT.segmentos(resultado([(0, "Hola,"), (0, "necesito"), (1, "Mejor"), (1, "Palmira."), (0, "Bueno.")]))
+    assert [(s.hablante, s.texto) for s in segs] == [(0, "Hola, necesito"), (1, "Mejor Palmira."), (0, "Bueno.")]
+    assert segs[0].inicio == 0 and segs[1].fin == 1.9
+    assert STT.segmentos({"type": "Results"}) == [] and STT.segmentos(resultado([])) == []
+
+
+def test_url_del_stt_tiene_diarizacion_y_keyterms():
+    u = STT.url()
+    assert "diarize_model=latest" in u and "language=es" in u and "interim_results=true" in u
+    assert "keyterm=Cali" in u and "diarize=true" not in u
+
+
+def test_panel_muestra_dos_hablantes_con_tiempos_y_parciales_que_se_reemplazan():
+    stt = STTFalso()
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.stt is not None)
+        stt.empujar(resultado([(0, "Hola")], final=False), resultado([(0, "Hola,"), (0, "necesito")]),
+                    resultado([(1, "Mejor"), (1, "Palmira.")]))
+        await esperar(lambda: len(ws.de_tipo(ev.Transcript)) == 3)
+
+    ws = correr(con_stt(prueba, stt))
+    t = ws.de_tipo(ev.Transcript)
+    assert [(x.segment_id, x.speaker, x.text, x.is_final) for x in t] == [
+        ("h-0-0", "Hablante 1", "Hola", False), ("h-0-0", "Hablante 1", "Hola, necesito", True),
+        ("h-1-0", "Hablante 2", "Mejor Palmira.", True)]
+    assert t[2].start == 0 and t[2].end == 0.9
+
+
+def test_el_mismo_audio_va_al_agente_y_al_stt_aunque_el_agente_hable():
+    stt = STTFalso()
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.stt is not None and sesion.agente is not None)
+        ws.binario(b"\x07" * 640)
+        await esperar(lambda: len(stt.audio) == 1 and agente.audio == 640)
+        agente.empujar(b"\x01\x00" * 10)  # el agente habla: otra persona puede hablarle encima
+        await esperar(lambda: sesion.maquina.estado is E.HABLANDO)
+        ws.binario(b"\x07" * 640)
+        await esperar(lambda: len(stt.audio) == 2)
+
+    correr(con_stt(prueba, stt))
+    assert stt.audio == [b"\x07" * 640] * 2
+
+
+def test_el_eco_del_agente_no_aparece_como_hablante():
+    stt = STTFalso()
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.stt is not None)
+        agente.empujar({"type": "ConversationText", "role": "assistant",
+                        "content": "En Palmira hay cuatro sedes con cuidado intensivo."})
+        await esperar(lambda: ws.de_tipo(ev.AgentText))
+        stt.empujar(resultado([(1, "Palmira"), (1, "hay"), (1, "cuatro"), (1, "sedes"), (1, "con"), (1, "cuidado")]),
+                    resultado([(0, "Gracias,"), (0, "¿y"), (0, "en"), (0, "Cali?")]))
+        await esperar(lambda: any(t.speaker.startswith("Hablante") for t in ws.de_tipo(ev.Transcript)))
+
+    ws = correr(con_stt(prueba, stt))
+    assert [t.text for t in ws.de_tipo(ev.Transcript) if t.speaker != "Agente"] == ["Gracias, ¿y en Cali?"]
+
+
+def test_con_stt_la_voz_del_usuario_no_se_duplica_pero_el_texto_escrito_si_aparece():
+    stt = STTFalso()
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.stt is not None)
+        agente.empujar({"type": "UserStartedSpeaking"}, {"type": "ConversationText", "role": "user", "content": "dicho"})
+        await esperar(lambda: ("pensando", 1) in ws.estados())
+        ws.texto({"type": "text_input", "text": "escrito"})
+        await esperar(lambda: ("inactivo", 2) in ws.estados())
+
+    ws = correr(con_stt(prueba, stt))
+    textos = [t.text for t in ws.de_tipo(ev.Transcript) if t.speaker != "Agente"]
+    assert textos == ["escrito"]
+
+
+def test_si_el_stt_falla_avisa_y_el_panel_usa_el_texto_del_agente():
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: ws.de_tipo(ev.ErrorEvento))
+        agente.empujar({"type": "UserStartedSpeaking"}, {"type": "ConversationText", "role": "user", "content": "dicho"})
+        await esperar(lambda: ws.de_tipo(ev.Transcript))
+
+    ws = correr(con_stt(prueba, None, falla=STT.ErrorSTT("sin red")))
+    assert ws.de_tipo(ev.ErrorEvento)[0].where == "transcripcion"
+    assert ws.de_tipo(ev.Transcript)[0].text == "dicho"
+
+
+def test_al_cerrar_el_navegador_se_cierra_el_stt():
+    stt = STTFalso()
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.stt is not None)
+
+    correr(con_stt(prueba, stt))
+    assert stt.cerrado

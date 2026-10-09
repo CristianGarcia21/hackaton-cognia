@@ -25,6 +25,7 @@ from server import events as ev
 from server import tools_registry
 from server.data import datos_gov
 from server.deepgram_agent import ConexionAgente, settings
+from server.deepgram_stt import ConexionSTT
 from server.mcp_hub import HubMCP
 from server.session import Sesion
 from server.tools.ips import HerramientasIPS
@@ -135,12 +136,16 @@ async def _abrir_agente(funciones: list[dict]) -> ConexionAgente:
         funciones, groq_key=config.GROQ_API_KEY, modelo=config.VOICE_LLM, voz=config.VOZ))
 
 
+async def _abrir_stt() -> ConexionSTT:
+    return await ConexionSTT.abrir(config.DEEPGRAM_API_KEY)
+
+
 @app.websocket("/ws/voz")
 async def ws_voz(ws: WebSocket) -> None:
     await ws.accept()
     session_id = uuid.uuid4().hex[:12]
     log.info("Sesión %s abierta", session_id)
-    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente)
+    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente, _abrir_stt)
     iniciales = [ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"])]
     if estado.fuente is not None:
         iniciales.append(estado.fuente)

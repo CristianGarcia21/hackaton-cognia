@@ -23,6 +23,8 @@ import logging
 
 import websockets
 
+from server import deepgram_stt
+
 log = logging.getLogger("cognia.deepgram")
 
 URL = "wss://agent.deepgram.com/v1/agent/converse"
@@ -51,10 +53,11 @@ REGLAS:
 - Ante una urgencia (dolor en el pecho, dificultad para respirar, sangrado fuerte, intento de suicidio), indica llamar ya al 123 antes de cualquier otra cosa.
 - Menciona la fecha de corte cuando des cifras.
 
-ESTILO (se convierte a voz): máximo tres frases por respuesta, sin markdown, sin listas, sin asteriscos ni tablas, sin emojis. Di los números como se hablan. Si hay muchos resultados, menciona los dos o tres más relevantes y ofrece más."""
+ESTILO (todo se convierte a voz): máximo tres frases por respuesta, en un solo párrafo. Prohibido: listas numeradas o con viñetas, saltos de línea, markdown, asteriscos, tablas y emojis. Di los números como se hablan. Si hay muchos resultados, menciona los dos o tres más relevantes y ofrece más."""
 
-# Palabras que el STT debe reconocer bien (también se agregan las lecciones aprendidas, #23).
-KEYTERMS = ["IPS", "EPS", "UCI", "REPS", "Kognia", "datos.gov.co"]
+# Palabras que el STT debe reconocer bien (también se agregan las lecciones aprendidas, #23). Sin las
+# ciudades, "Cali" se transcribe "calle" y el agente pregunta el municipio que ya le dijeron.
+KEYTERMS = ["REPS", "Kognia", "datos.gov.co", *deepgram_stt.KEYTERMS]
 
 
 def settings(funciones: list[dict], *, groq_key: str, modelo: str = "openai/gpt-oss-20b",
