@@ -7,7 +7,7 @@ Como proceso aparte (stdio, p. ej. Claude Desktop o un hub en otra máquina):
 
 import inspect
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal, get_args, get_origin
 
 from mcp.server.mcpserver import MCPServer
 
@@ -38,9 +38,11 @@ def _registrar(mcp: MCPServer, t, fn) -> None:
 
 
 def _permisiva(nombre: str, fn):
-    """Función con los mismos parámetros y defaults que `fn`, pero anotados como Any."""
+    """Función con los mismos parámetros y defaults que `fn`, con anotaciones laxas: `str` para los textos
+    (incluidos los Literal de texto: así "publica" pasa y la tool lo normaliza) y `Any` para el resto
+    (nivel=2, limite="cinco"). Con `Any` en un texto, el SDK convertiría "null" o "true" desde JSON."""
     firma = inspect.signature(fn)
-    firma = firma.replace(parameters=[p.replace(annotation=Any) for p in firma.parameters.values()],
+    firma = firma.replace(parameters=[p.replace(annotation=_laxa(p.annotation)) for p in firma.parameters.values()],
                           return_annotation=str)
 
     async def llamar(**kwargs):
@@ -48,8 +50,17 @@ def _permisiva(nombre: str, fn):
 
     llamar.__name__ = nombre
     llamar.__signature__ = firma
-    llamar.__annotations__ = {p.name: Any for p in firma.parameters.values()} | {"return": str}
+    llamar.__annotations__ = {p.name: p.annotation for p in firma.parameters.values()} | {"return": str}
     return llamar
+
+
+def _laxa(anotacion):
+    if anotacion is str:
+        return str
+    valores = get_args(anotacion) if get_origin(anotacion) is Literal else ()
+    if valores and all(isinstance(v, str) and not v.isdigit() for v in valores):
+        return str  # con valores como "1", "2" el LLM puede mandar el número: queda Any
+    return Any
 
 
 def crear_servidor_autonomo() -> MCPServer:

@@ -23,6 +23,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -55,6 +56,7 @@ class _Servidor:
     nombre: str
     origen: Any
     cacheable: bool
+    timeout_s: float | None = None  # None: el del hub
     cliente: Client | None = None
     tools: dict[str, ToolMCP] = field(default_factory=dict)
     caido: asyncio.Event = field(default_factory=asyncio.Event)
@@ -64,21 +66,25 @@ class _Servidor:
 
 class HubMCP:
     def __init__(self, timeout_s: float = 3.0, ttl_cache_s: float = 600.0, max_cache: int = 256,
-                 espera_inicial_s: float = 1.0, espera_max_s: float = 30.0):
+                 espera_inicial_s: float = 1.0, espera_max_s: float = 30.0, conexion_s: float = 10.0,
+                 ping_s: float = 15.0):
         self.timeout_s, self.ttl_cache_s, self.max_cache = timeout_s, ttl_cache_s, max_cache
         self.espera_inicial_s, self.espera_max_s = espera_inicial_s, espera_max_s
+        self.conexion_s = conexion_s  # tope para abrir la conexión y listar tools (un handshake colgado)
+        self.ping_s = ping_s  # cada cuánto se verifica una conexión sin llamadas (un proceso que murió solo)
         self._servidores: dict[str, _Servidor] = {}
-        self._indice: dict[str, str] = {}  # tool -> servidor (la primera que se registró gana)
+        self._indice: dict[str, str] = {}  # tool -> servidor (con nombres repetidos gana el registrado antes)
         self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
         self._cerrando = False
 
     # ------------------------------- ciclo de vida -------------------------------
 
-    def registrar(self, nombre: str, origen, *, cacheable: bool = False) -> None:
-        """Agrega un servidor. `cacheable=True` solo para tools de lectura sin efectos."""
+    def registrar(self, nombre: str, origen, *, cacheable: bool = False, timeout_s: float | None = None) -> None:
+        """Agrega un servidor. `cacheable=True` solo para tools de lectura sin efectos; `timeout_s` cambia
+        el tope por llamada de ese servidor (p. ej. si su fuente ya tiene su propio presupuesto)."""
         if nombre in self._servidores:
             raise ValueError(f"El servidor MCP '{nombre}' ya está registrado")
-        self._servidores[nombre] = _Servidor(nombre, origen, cacheable)
+        self._servidores[nombre] = _Servidor(nombre, origen, cacheable, timeout_s)
 
     async def iniciar(self, espera_s: float = 15.0) -> None:
         """Lanza la supervisión de cada servidor y espera el primer intento de todos (con tope).
@@ -107,37 +113,67 @@ class HubMCP:
     async def _supervisar(self, s: _Servidor) -> None:
         espera = self.espera_inicial_s
         while not self._cerrando:
+            sano = False
             try:
-                async with Client(s.origen) as cliente:
-                    self._indexar(s, (await cliente.list_tools()).tools)
+                async with AsyncExitStack() as pila:
+                    async with asyncio.timeout(self.conexion_s):  # solo la apertura, no la vida de la conexión
+                        cliente = await pila.enter_async_context(Client(s.origen))
+                        tools = (await cliente.list_tools()).tools
+                    self._indexar(s, tools)
                     s.caido.clear()
                     s.cliente = cliente
                     s.intento.set()
+                    sano = True
                     log.info("MCP '%s' conectado (%d tools)", s.nombre, len(s.tools))
-                    espera = self.espera_inicial_s
-                    await s.caido.wait()  # una llamada detectó que la conexión murió: reabrir
+                    await self._vigilar(s, cliente)
                     log.warning("MCP '%s' caído; reconectando", s.nombre)
             except asyncio.CancelledError:
                 raise
             except BaseException as e:  # noqa: BLE001 — ExceptionGroup de anyio incluido: reintentar
                 if isinstance(e, (KeyboardInterrupt, SystemExit)):
                     raise
-                log.warning("MCP '%s' no disponible (%s); reintento en %.1fs", s.nombre, _causa(e), espera)
+                log.warning("MCP '%s' no disponible (%s); reintento en %.1fs", s.nombre, _causa(e),
+                            0 if sano else espera)
             finally:
                 s.cliente = None
                 s.intento.set()
             if self._cerrando:
                 break
+            if sano:  # venía funcionando: reconectar ya; la espera creciente es para fallos seguidos
+                espera = self.espera_inicial_s
+                continue
             await asyncio.sleep(espera)
             espera = min(espera * 2, self.espera_max_s)
 
+    async def _vigilar(self, s: _Servidor, cliente: Client) -> None:
+        """Vuelve cuando la conexión murió: una llamada lo detectó (`caido`) o un ping periódico falló."""
+        while True:
+            try:
+                await asyncio.wait_for(s.caido.wait(), self.ping_s)
+                return
+            except TimeoutError:
+                pass
+            try:
+                async with asyncio.timeout(self.timeout_s):
+                    await cliente.list_tools()  # `ping` no existe en el protocolo moderno (2026-07-28)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.warning("MCP '%s' no responde a la verificación (%s)", s.nombre, _causa(e))
+                return
+
     def _indexar(self, s: _Servidor, tools) -> None:
+        orden = list(self._servidores)
         s.tools = {}
         for t in tools:
-            dueño = self._indice.setdefault(t.name, s.nombre)
-            if dueño != s.nombre:
-                log.error("Tool '%s' de '%s' ignorada: ya la expone '%s'", t.name, s.nombre, dueño)
-                continue
+            dueño = self._indice.get(t.name)
+            if dueño not in (None, s.nombre):
+                if orden.index(dueño) < orden.index(s.nombre):
+                    log.error("Tool '%s' de '%s' ignorada: ya la expone '%s'", t.name, s.nombre, dueño)
+                    continue
+                log.error("Tool '%s' pasa de '%s' a '%s' (registrado antes)", t.name, dueño, s.nombre)
+                self._servidores[dueño].tools.pop(t.name, None)
+            self._indice[t.name] = s.nombre
             s.tools[t.name] = ToolMCP(s.nombre, t.name, t.description or t.name, dict(t.input_schema or {}))
 
     # ------------------------------- consulta -------------------------------
@@ -174,11 +210,12 @@ class HubMCP:
         if cliente is None:
             return fin(f"Error: el servicio '{s.nombre}' no está disponible en este momento; ya estoy "
                        "reconectando. Intenta de nuevo en unos segundos.", "error", s.nombre)
+        tope = s.timeout_s or self.timeout_s
         try:
-            async with asyncio.timeout(self.timeout_s):
+            async with asyncio.timeout(tope):
                 r = await cliente.call_tool(nombre, args)
         except TimeoutError:
-            return fin(f"Error: la consulta tardó más de {self.timeout_s:g} s. Puedo intentarlo de nuevo "
+            return fin(f"Error: la consulta tardó más de {tope:g} s. Puedo intentarlo de nuevo "
                        "o buscarlo de otra forma.", "timeout", s.nombre)
         except asyncio.CancelledError:
             raise
@@ -229,6 +266,8 @@ def _error_corto(nombre: str, texto: str) -> str:
         problemas = []
         for campo, detalle in zip(lineas, lineas[1:]):
             if campo and not campo.startswith(" ") and detalle.startswith("  "):
-                problemas.append(f"{campo}: {re.sub(r'\s*\[type=.*$', '', detalle.strip())}")
+                detalle = re.sub(r'\s*\[type=.*$', '', detalle.strip())
+                problemas.append(f"falta el parámetro {campo}" if detalle == "Field required"
+                                 else f"{campo}: {detalle}")
         return f"Error: argumentos inválidos para {nombre}: {'; '.join(problemas)[:200]}. Corrígelos y vuelve a intentar."
     return f"Error: la tool {nombre} falló. Prueba de nuevo o reformula la pregunta."

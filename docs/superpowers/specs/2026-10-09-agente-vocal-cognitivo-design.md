@@ -301,7 +301,7 @@ cliente, es decir, en nuestro backend. El backend las despacha al MCP correspond
 | **calendario** | `crear_evento_cita` | `(solicitud_id, fecha_hora, duracion_min=30)` | Evento con enlace (.ics local o Google) |
 
 **Reglas de las tools:** resultados **compactos** (top 5 y campos clave), errores devueltos como texto,
-tiempo límite de **3 s** por llamada; las tools de IPS consultan la API con SoQL armado por ellas (caché
+tiempo límite de **3 s** por llamada (5 s en IPS, cuyo cliente ya acota la consulta a 4.5 s con reintento y mensaje honesto); las tools de IPS consultan la API con SoQL armado por ellas (caché
 de resultados en `ClienteDatosGov`) y deduplican al sumar. Las tools
 son "gruesas": una sola llamada debe bastar para la mayoría de las preguntas, porque cada vuelta extra
 al LLM cuesta entre 200 y 400 ms.

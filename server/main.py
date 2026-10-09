@@ -90,14 +90,15 @@ async def lifespan(_app: FastAPI):
     # En segundo plano: /api/health responde mientras se consulta la API.
     tarea = asyncio.create_task(_conectar_datos_gov())
     # Hub MCP: las tools de IPS existen desde ya y responden "cargando" hasta que llega el catálogo.
-    estado.ips = HerramientasIPS(estado.datos, estado.catalogo)
-    estado.hub = HubMCP()
-    tools_registry.registrar_servidores(estado.hub, estado.ips)
-    await estado.hub.iniciar()
     try:
+        estado.ips = HerramientasIPS(estado.datos, estado.catalogo)
+        estado.hub = HubMCP()
+        tools_registry.registrar_servidores(estado.hub, estado.ips)
+        await estado.hub.iniciar()
         yield
     finally:
-        await estado.hub.cerrar()
+        if estado.hub is not None:
+            await estado.hub.cerrar()
         tarea.cancel()
         with suppress(asyncio.CancelledError):
             await tarea

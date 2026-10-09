@@ -275,3 +275,97 @@ def test_resumen_es_una_linea_corta():
     assert R.resumen("Encontré 73 sedes en Medellín.\n1. HOSPITAL X") == "Encontré 73 sedes en Medellín."
     assert len(R.resumen("a" * 500)) <= 90
     assert R.resumen("") == ""
+
+
+# ------------------------------- revisión QA de #9 -------------------------------
+
+COLGADO = StdioServerParameters(command=sys.executable, args=["-c", "import time; time.sleep(60)"])
+
+
+def test_hub_un_handshake_colgado_no_bloquea_y_se_reintenta():
+    mcp, _ = servidor_contador()
+
+    async def prueba(hub):
+        loop = asyncio.get_running_loop()
+        t = loop.time()
+        await hub.iniciar(espera_s=5)
+        return loop.time() - t, hub.estado()
+
+    async def correr_hub():
+        hub = HubMCP(conexion_s=0.3, espera_inicial_s=0.05)
+        hub.registrar("contador", mcp)
+        hub.registrar("colgado", COLGADO)
+        try:
+            return await prueba(hub)
+        finally:
+            await hub.cerrar()
+
+    demora, estado = correr(correr_hub())
+    assert demora < 3 and estado == {"contador": True, "colgado": False}
+
+
+def test_hub_detecta_con_ping_un_proceso_que_murio_sin_llamadas():
+    async def prueba(hub):
+        assert (await hub.llamar("morir_luego", {})).texto == "ok"
+        for _ in range(100):  # el ping nota la caída y el supervisor reconecta solo
+            await asyncio.sleep(0.1)
+            if hub._servidores["prueba"].cliente is not None and _ > 10:
+                break
+        return await hub.llamar("eco", {"texto": "vivo"})
+
+    r = correr(con_hub(prueba, ("prueba", PRUEBA, False), ping_s=0.3, espera_inicial_s=0.05, timeout_s=5))
+    assert r.texto == "vivo" and r.status == "ok"
+
+
+def test_hub_timeout_por_servidor():
+    mcp, _ = servidor_contador()
+
+    async def prueba(hub):
+        return await hub.llamar("lenta", {})
+
+    async def correr_hub():
+        hub = HubMCP(timeout_s=0.1)
+        hub.registrar("contador", mcp, timeout_s=3)
+        await hub.iniciar()
+        try:
+            return await prueba(hub)
+        finally:
+            await hub.cerrar()
+
+    assert correr(correr_hub()).texto == "tarde"
+
+
+def test_hub_con_nombres_repetidos_gana_el_registrado_antes_aunque_conecte_despues():
+    mcp, _ = servidor_contador()
+    mcp.add_tool(lambda texto="": "en proceso", name="eco")
+
+    async def prueba(hub):
+        return [t.servidor for t in hub.tools() if t.nombre == "eco"], await hub.llamar("eco", {"texto": "x"})
+
+    duenos, r = correr(con_hub(prueba, ("prueba", PRUEBA, False), ("contador", mcp, False), timeout_s=5))
+    assert duenos == ["prueba"] and r.texto == "x"
+
+
+def test_hub_falta_un_parametro_obligatorio_en_espanol():
+    mcp, _ = servidor_contador()
+    r = correr(con_hub(lambda hub: hub.llamar("sumar", {}), ("contador", mcp, False)))
+    assert "falta el parámetro a" in r.texto and "Field required" not in r.texto
+
+
+@pytest.mark.parametrize("nombre", ["null", "true", '["Cali"]'])
+def test_ips_por_mcp_no_convierte_textos_que_parecen_json(nombre):
+    h, _ = herramientas(reglas=[("like", [])])
+    r = correr(con_hub(lambda hub: hub.llamar("detalle_ips", {"nombre": nombre}),
+                       ("ips", servidor_ips.crear_servidor(h), True)))
+    assert "indica el nombre" not in r.texto and "argumentos inválidos" not in r.texto, r.texto
+
+
+def test_hub_la_verificacion_periodica_no_reconecta_una_conexion_sana(caplog):
+    mcp, _ = servidor_contador()
+
+    async def prueba(hub):
+        await asyncio.sleep(0.5)  # varias verificaciones
+        return await hub.llamar("sumar", {"a": 1})
+
+    r = correr(con_hub(prueba, ("contador", mcp, False), ping_s=0.05))
+    assert r.texto == "1" and "caído" not in caplog.text and "verificación" not in caplog.text

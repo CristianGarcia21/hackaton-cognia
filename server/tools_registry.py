@@ -14,11 +14,14 @@ from server.mcp_hub import HubMCP, Resultado
 from server.tools.ips import HerramientasIPS
 
 MAX_RESUMEN = 90
+TIMEOUT_IPS_S = 5.0
 
 
 def registrar_servidores(hub: HubMCP, ips: HerramientasIPS) -> None:
     """Todos los servidores MCP del agente. `cacheable=True` solo para lecturas sin efectos."""
-    hub.registrar("ips", mcp_ips.crear_servidor(ips), cacheable=True)
+    # IPS: 5 s porque ClienteDatosGov ya acota cada consulta a 4.5 s (reintento incluido) y responde con
+    # un mensaje honesto ("datos.gov.co no responde"); con 3 s el hub cortaría antes de ese mensaje.
+    hub.registrar("ips", mcp_ips.crear_servidor(ips), cacheable=True, timeout_s=TIMEOUT_IPS_S)
     # hub.registrar("citas", mcp_citas.crear_servidor(...))            # #16 (Carlos)
     # hub.registrar("excel", mcp_excel.crear_servidor(...))            # #17 (Carlos)
     # hub.registrar("calendario", mcp_calendario.crear_servidor(...))  # #18 (Carlos)
