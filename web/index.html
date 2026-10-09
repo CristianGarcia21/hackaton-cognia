@@ -8,10 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500&display=swap">
   <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.js"></script>
-  <script type="module" src="microfono.js"></script>
-  <script type="module" src="captura.js"></script>
-  <script type="module" src="reproductor.js"></script>
+  <script type="module" src="inicio.js"></script>
 </head>
 <body>
   <!-- Contrato de eventos: server/events.py → web/contrato.json. Cada panel tiene un id fijo que usan app.js y los
@@ -75,7 +72,18 @@
     <aside class="columna-derecha">
       <section class="panel" aria-labelledby="titulo-emociones">
         <h2 id="titulo-emociones">Emociones y adaptación</h2>
-        <div id="emociones"><p class="tenue">Aún sin análisis.</p></div>
+        <div id="adaptacion" class="adaptacion" data-activa="false">
+          <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>
+          <div>
+            <p id="adaptacion-titulo" class="adaptacion-titulo">Sin adaptación · estilo estándar</p>
+            <p id="adaptacion-motivo" class="adaptacion-motivo tenue">El agente ajusta su forma de hablar según las emociones detectadas.</p>
+          </div>
+        </div>
+        <figure class="grafico">
+          <svg id="grafico-sentimiento" viewBox="0 0 320 130" role="img" aria-labelledby="sentimiento-resumen"></svg>
+          <figcaption id="sentimiento-resumen" class="tenue">Sentimiento por turno: aún sin análisis.</figcaption>
+        </figure>
+        <ul id="emociones-actuales" class="emociones-actuales" aria-label="Emoción actual por hablante"></ul>
       </section>
       <section class="panel" aria-labelledby="titulo-acciones">
         <h2 id="titulo-acciones">Acciones</h2>

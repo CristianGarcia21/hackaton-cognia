@@ -18,12 +18,16 @@ def test_cada_id_que_usan_los_js_existe_en_index_html():
     assert ids_js and ids_js <= ids_html, f"faltan en index.html: {ids_js - ids_html}"
 
 
-def test_cada_modulo_js_se_carga_o_se_importa():
+def test_index_tiene_una_sola_entrada_y_todo_modulo_se_importa():
+    # Una sola etiqueta <script>: con varias, un módulo puede evaluarse tarde y perderse los primeros eventos.
     html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert re.findall(r"<script\b[^>]*>", html) == ['<script type="module" src="inicio.js">']
     js = "\n".join(f.read_text(encoding="utf-8") for f in WEB.glob("*.js"))
     for modulo in WEB.glob("*.js"):
-        usos = (f'src="{modulo.name}"' in html, f'"./{modulo.name}"' in js, f'addModule("{modulo.name}")' in js)
-        assert any(usos), f"{modulo.name} no se usa"
+        if modulo.name == "inicio.js":
+            continue
+        usos = (f'"./{modulo.name}"' in js, f'addModule("{modulo.name}")' in js)
+        assert any(usos), f"{modulo.name} no se importa (agrégalo en inicio.js)"
 
 
 def test_cada_estado_del_contrato_tiene_texto_y_color():
@@ -37,6 +41,6 @@ def test_cada_estado_del_contrato_tiene_texto_y_color():
 def test_el_servidor_sirve_la_ui():
     with TestClient(mock_ws.create_app(velocidad=0)) as client:
         html = client.get("/")
-        assert html.status_code == 200 and 'src="app.js"' in html.text and 'href="styles.css"' in html.text
+        assert html.status_code == 200 and 'src="inicio.js"' in html.text and 'href="styles.css"' in html.text
         assert "javascript" in client.get("/app.js").headers["content-type"]
         assert client.get("/styles.css").headers["content-type"].startswith("text/css")

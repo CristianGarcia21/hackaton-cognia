@@ -157,7 +157,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .segmento.agente { align-self: flex-end; border-left: none; border-right: 4px solid var(--c); }
 .segmento.interrumpido .segmento-texto::after { content: " (interrumpido)"; color: var(--tenue); font-style: italic; }
 .separador { align-self: center; font-size: 0.8rem; color: var(--tenue); padding: 4px 12px; border-top: 1px solid var(--borde); }
-.segmento-meta { display: flex; gap: 8px; align-items: baseline; font-size: 0.8rem; margin-bottom: 2px; }
+.segmento-meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 0.8rem; margin-bottom: 2px; }
 .segmento-hablante { font-weight: 700; color: var(--c); }
 .segmento-tiempo { color: var(--tenue); font-variant-numeric: tabular-nums; }
 .segmento-texto { margin: 0; color: var(--texto); }
@@ -167,8 +167,66 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   border: none; border-radius: 999px; background: var(--texto); color: #fff; box-shadow: var(--sombra);
 }
 
-/* Acciones */
+/* ---------------- Emociones y adaptación (paneles.js) ---------------- */
+.adaptacion {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--borde); background: var(--fondo); color: var(--texto-suave);
+}
+.adaptacion .icono { flex: none; margin-top: 2px; }
+.adaptacion p { margin: 0; }
+.adaptacion-titulo { font-weight: 600; color: var(--texto); }
+.adaptacion-motivo { font-size: 0.85rem; }
+.adaptacion[data-activa="true"] { border-color: var(--estado-tool); background: #f5f3ff; color: var(--estado-tool); }
+.adaptacion[data-regla="urgencia"] { border-color: var(--estado-interrumpido); background: #fff1f2; color: var(--estado-interrumpido); }
+.adaptacion.cambio { animation: cambio-adaptacion 900ms ease-out; }
+@keyframes cambio-adaptacion { 0% { box-shadow: 0 0 0 0 rgb(124 58 237 / 45%); } 100% { box-shadow: 0 0 0 10px rgb(124 58 237 / 0%); } }
+
+.grafico { margin: 0; }
+.grafico svg { display: block; width: 100%; height: auto; }
+.grafico figcaption { font-size: 0.85rem; margin-top: 4px; }
+.g-negativo { fill: #fef2f2; }
+.g-guia { stroke: var(--borde); stroke-width: 1; }
+.g-cero { stroke: var(--tenue); stroke-width: 1; stroke-dasharray: 3 3; }
+.g-etiqueta { font: 10px var(--fuente); fill: var(--tenue); }
+.g-linea { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.g-punto { stroke: #fff; stroke-width: 1.5; }
+
+.emociones-actuales { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.emocion-cabecera { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; }
+.emocion-hablante { font-weight: 700; color: var(--c); }
+.emocion-nombre { font-weight: 600; }
+.emocion-barra { height: 8px; border-radius: 999px; background: var(--borde); overflow: hidden; margin-top: 4px; }
+.emocion-relleno { height: 100%; width: 0; background: var(--c); transition: width 300ms ease; }
+.emocion-senales { margin: 4px 0 0; font-size: 0.8rem; }
+
+/* ---------------- Verificación de cada respuesta ---------------- */
+.verificacion {
+  margin-left: auto; font-weight: 600; font-size: 0.75rem; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.verificacion[data-estado="respaldado"] { color: #047857; }
+.verificacion[data-estado="parcial"] { color: #92400e; }
+.verificacion[data-estado="no_respaldado"] { color: var(--peligro); }
+.verificacion[data-estado="fuera_de_datos_ok"] { color: #1d4ed8; }
+.verificacion-detalle { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--borde); font-size: 0.85rem; }
+.verificacion-detalle p { margin: 2px 0; color: var(--texto-suave); }
+.verificacion-detalle[data-estado="no_respaldado"] p { color: var(--peligro); }
+.verificacion-correccion { font-weight: 600; }
+
+/* ---------------- Acciones ---------------- */
 .acciones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.accion { --c: var(--primario-fuerte); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); border-left: 4px solid var(--c); }
+.accion[data-tipo="evento"] { --c: var(--estado-tool); }
+.accion[data-tipo="excel"] { --c: #047857; }
+.accion-cabecera { font-size: 0.95rem; }
+.accion-datos { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0 0; font-size: 0.85rem; }
+.accion-datos dt { color: var(--tenue); }
+.accion-datos dd { margin: 0; }
+.accion-estado { margin: 6px 0 0; font-size: 0.85rem; font-weight: 600; color: #92400e; }
+.accion-enlace {
+  display: inline-flex; align-items: center; min-height: 44px; margin-top: 4px; font-weight: 600;
+  color: var(--primario-fuerte);
+}
 
 /* ---------------- Inspector ---------------- */
 .inspector { margin: 0 24px 24px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--radio); }

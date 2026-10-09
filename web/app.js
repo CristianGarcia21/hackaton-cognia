@@ -8,8 +8,9 @@
 //     bus.addEventListener("emotion", (e) => pintar(e.detail));
 //
 // Importa siempre "./app.js" con esa URL exacta: los módulos ES se evalúan una vez por URL (otra URL abriría
-// un segundo WebSocket). La conexión arranca en DOMContentLoaded, así los módulos de otras etiquetas <script
-// type="module"> ya están suscritos cuando llegan ready, source_status y brief.
+// un segundo WebSocket). La conexión NO arranca sola: la abre inicio.js con iniciar() después de importar todos
+// los módulos, así cada uno ya está suscrito cuando llegan ready, source_status, brief... Un módulo nuevo se
+// agrega como import en inicio.js (no como otra etiqueta <script> en index.html).
 //
 // Servidor alternativo:  /?ws=ws://127.0.0.1:8001/ws/voz   (por defecto, el mismo host que sirve la página).
 // Todo lo que llega del servidor se pinta con textContent (nunca innerHTML).
@@ -134,7 +135,8 @@ const segmentos = new Map(); // segment_id -> { li, inicio }
 let ultimoTiempo = 0; // segundos: el mayor start/end visto, para que la marca mm:ss nunca retroceda
 const hablantesVistos = new Set();
 
-function claseHablante(speaker) {
+/** Color CSS de un hablante (lo usan la transcripción y el gráfico de sentimiento de paneles.js). */
+export function claseHablante(speaker) {
   if (speaker === "Agente") return "var(--hablante-agente)";
   const n = Number(/(\d+)/.exec(speaker)?.[1] ?? 1);
   return `var(--hablante-${(((n - 1) % 4) + 4) % 4 + 1})`; // "Hablante 0" también tiene color
@@ -330,6 +332,8 @@ ui.reconectar.addEventListener("click", () => {
 ui.irAlFinal.addEventListener("click", irAlFinal);
 ui.transcripcion.addEventListener("scroll", () => { if (cercaDelFinal()) ui.irAlFinal.hidden = true; });
 
-revisarNavegador();
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", conectar);
-else conectar();
+/** Lo llama inicio.js cuando todos los módulos ya se suscribieron al bus. */
+export function iniciar() {
+  revisarNavegador();
+  conectar();
+}
