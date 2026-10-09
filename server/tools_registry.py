@@ -9,26 +9,34 @@ Para agregar un servidor MCP (citas, excel, calendario): una línea en `registra
 
 import json
 
+from mcp_servers import calendario as mcp_calendario
 from mcp_servers import citas as mcp_citas
+from mcp_servers import excel as mcp_excel
 from mcp_servers import ips as mcp_ips
 from server.mcp_hub import HubMCP, Resultado
+from server.tools.calendario import HerramientasCalendario
 from server.tools.citas import HerramientasCitas
+from server.tools.excel import HerramientasExcel
 from server.tools.ips import HerramientasIPS
 
 MAX_RESUMEN = 90
 TIMEOUT_IPS_S = 5.0
 
 
-def registrar_servidores(hub: HubMCP, ips: HerramientasIPS, citas: HerramientasCitas | None = None) -> None:
+def registrar_servidores(hub: HubMCP, ips: HerramientasIPS, citas: HerramientasCitas | None = None,
+                         calendario: HerramientasCalendario | None = None, excel: HerramientasExcel | None = None) -> None:
     """Todos los servidores MCP del agente. `cacheable=True` solo para lecturas sin efectos.
     `citas` por defecto usa data/citas.db (CITAS_DB); la base se crea en el primer uso, no al registrar."""
     # IPS: 5 s porque ClienteDatosGov ya acota cada consulta a 4.5 s (reintento incluido) y responde con
     # un mensaje honesto ("datos.gov.co no responde"); con 3 s el hub cortaría antes de ese mensaje.
     hub.registrar("ips", mcp_ips.crear_servidor(ips), cacheable=True, timeout_s=TIMEOUT_IPS_S)
     # Citas: escribe en SQLite, así que NUNCA cacheable (dos solicitudes iguales deben llegar a la tool).
-    hub.registrar("citas", mcp_citas.crear_servidor(citas or HerramientasCitas()))
-    # hub.registrar("excel", mcp_excel.crear_servidor(...))            # #17 (Carlos)
-    # hub.registrar("calendario", mcp_calendario.crear_servidor(...))  # #18 (Carlos)
+    citas = citas or HerramientasCitas()
+    hub.registrar("citas", mcp_citas.crear_servidor(citas))
+    # Calendario (#18): local siempre; además Google Calendar real si hay cuenta de servicio configurada.
+    hub.registrar("calendario", mcp_calendario.crear_servidor(calendario or HerramientasCalendario(citas)),
+                  timeout_s=8.0)
+    hub.registrar("excel", mcp_excel.crear_servidor(excel or HerramientasExcel(citas)))  # #17
 
 
 def funciones_agente(hub: HubMCP) -> list[dict]:

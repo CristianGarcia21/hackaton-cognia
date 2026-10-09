@@ -221,7 +221,43 @@ class HerramientasCitas:
         return (f"{inicio} para {paciente} en {sede}. Motivo: {motivo}{cuando}. Estado: {ESTADO_PENDIENTE}. "
                 "Dile al usuario que NO es una cita confirmada: la IPS debe contactarlo para confirmarla, "
                 "porque estos datos no incluyen la agenda de las IPS. Queda en la lista de solicitudes (/citas), "
-                "lista para enviarse a la IPS, y desde ahí puede agregarla a su calendario.")
+                f"lista para enviarse a la IPS. Ahora llama crear_evento_cita con solicitud_id={solicitud_id} "
+                "para ponerla en el calendario (sin preguntar).")
+
+    async def proponer_cita(self, paciente: str, sede_codigo: str, motivo: str, fecha_hora: str,
+                            sede_nombre: str = "") -> str:
+        """Prepara una solicitud de cita para que el usuario la CONFIRME: valida la fecha y la hora, revisa que la franja esté libre y muestra en pantalla la ficha de la cita. Llámala siempre ANTES de pedirle al usuario el "sí"; si devuelve franjas libres, ofrécelas. No registra nada.
+
+        Args:
+            paciente: nombre completo del paciente
+            sede_codigo: id de la sede tal como lo dio buscar_ips o detalle_ips (ej. "500102126-01")
+            motivo: motivo de la cita en pocas palabras
+            fecha_hora: día y hora TAL COMO LOS DIJO el usuario (ej. "el lunes 12 a las 10 y media"); la tool los interpreta
+            sede_nombre: nombre de la sede, para la ficha
+        """
+        return await self._seguro(self._proponer, paciente, sede_codigo, motivo, fecha_hora, sede_nombre)
+
+    def _proponer(self, paciente, sede_codigo, motivo, fecha_hora, sede_nombre) -> str:
+        paciente, sede_codigo, motivo = _txt(paciente), _txt(sede_codigo).replace(" ", ""), _txt(motivo)
+        faltan = [n for n, v in (("el nombre del paciente", paciente), ("el motivo", motivo),
+                                 ("el día y la hora", _txt(fecha_hora))) if not v]
+        if faltan:
+            raise EntradaInvalida(f"falta {' y '.join(faltan)}. Pídeselo al usuario.")
+        if not SEDE_ID.match(sede_codigo):
+            raise EntradaInvalida(f"'{sede_codigo}' no es un id de sede válido; usa el de buscar_ips o detalle_ips.")
+        franja = _franja(fecha_hora)
+        with self._conexion() as con:
+            tomadas = _tomadas(con, sede_codigo, franja.date())
+        if franja in tomadas:
+            libres = _libres(tomadas, franja)
+            raise EntradaInvalida(
+                f"la franja {_hora(franja)} del {_fecha(franja)} ya tiene una solicitud en esa sede. "
+                + (f"Franjas libres cercanas: {', '.join(_hora(x) for x in libres)}. Ofrécelas al usuario."
+                   if libres else "No quedan franjas libres ese día; ofrece otro día."))
+        sede = _txt(sede_nombre) or f"la sede {sede_codigo}"
+        return (f"Propuesta lista (franja libre): {paciente} en {sede}, el {_fecha(franja)} de {franja.year} a las "
+                f"{_hora(franja)}, motivo {motivo}. La ficha ya está en pantalla. Léele estos datos al usuario y "
+                "pregúntale si confirma; con su «sí», llama registrar_solicitud_cita con los mismos datos.")
 
     async def horarios_ocupados(self, sede_codigo: str, fecha: str) -> str:
         """Consulta la agenda de SOLICITUDES ya registradas en una sede para un día: qué franjas están tomadas y cuáles libres. Úsala antes de proponer una hora o cuando el usuario pregunte qué horarios hay.
@@ -275,7 +311,8 @@ class HerramientasCitas:
         return "\n".join(lineas)
 
     def tools(self) -> list[Tool]:
-        return [tool(self.registrar_solicitud_cita), tool(self.listar_solicitudes), tool(self.horarios_ocupados)]
+        return [tool(self.proponer_cita), tool(self.registrar_solicitud_cita), tool(self.listar_solicitudes),
+                tool(self.horarios_ocupados)]
 
     # ------------------------------- semillas (demo) -------------------------------
 

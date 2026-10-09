@@ -62,7 +62,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
     monkeypatch.setattr(main.brief_fuente, "generar", _brief_falso)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), calendario=__import__("server.tools.calendario", fromlist=["x"]).HerramientasCalendario(__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), tmp_path / "cal.db", google=None)))
     componentes.clear()
     with TestClient(app) as c:
         _esperar_listo(c)
@@ -179,7 +179,7 @@ def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", falla)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.05)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), calendario=__import__("server.tools.calendario", fromlist=["x"]).HerramientasCalendario(__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), tmp_path / "cal.db", google=None)))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.3)
@@ -199,7 +199,7 @@ def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch, tmp_pat
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", bug)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.02)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), calendario=__import__("server.tools.calendario", fromlist=["x"]).HerramientasCalendario(__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db"), tmp_path / "cal.db", google=None)))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.2)
@@ -293,3 +293,12 @@ def test_pagina_y_api_de_citas(client):
     r = client.get(s["ics"])
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/calendar")
     assert client.get("/api/citas/99999.ics").status_code == 404
+
+
+def test_excel_y_calendario_por_http(client):
+    r = client.get("/api/citas/excel")
+    assert r.status_code == 200 and "spreadsheetml" in r.headers["content-type"]
+    assert client.head("/api/citas/excel").status_code == 200
+    cal = client.get("/api/calendario").json()
+    assert cal["backend"] in ("local", "google") and cal["eventos"] == []
+    assert client.get("/api/calendario.ics").text.startswith("BEGIN:VCALENDAR")

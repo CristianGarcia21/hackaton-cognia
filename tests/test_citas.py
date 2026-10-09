@@ -36,7 +36,8 @@ def test_registrar_devuelve_id_y_estado_honesto(citas):
 def test_la_base_se_crea_en_el_primer_uso_y_no_al_instanciar(tmp_path):
     ruta = tmp_path / "nueva" / "citas.db"
     h = C.HerramientasCitas(ruta)
-    assert [t.name for t in h.tools()] == ["registrar_solicitud_cita", "listar_solicitudes", "horarios_ocupados"]
+    assert [t.name for t in h.tools()] == ["proponer_cita", "registrar_solicitud_cita", "listar_solicitudes",
+                                          "horarios_ocupados"]
     assert not ruta.exists()
     correr(h.listar_solicitudes())
     assert ruta.exists()

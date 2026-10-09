@@ -1,0 +1,64 @@
+/* Ficha de cita (tarjeta-cita.js). Solo usa las variables de styles.css: mismo sistema visual. */
+
+.tc-ficha {
+  position: fixed; right: 24px; bottom: 24px; z-index: 50; width: min(400px, calc(100vw - 32px));
+  display: grid; grid-template-columns: 76px 1fr; gap: 12px 14px; padding: 16px 16px 14px;
+  background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--radio);
+  box-shadow: 0 12px 32px rgb(15 23 42 / 16%), var(--sombra); animation: tc-entrar 0.35s ease-out;
+  border-top: 4px solid var(--estado-pensando);
+}
+.tc-registrada { border-top-color: var(--primario); }
+.tc-en_calendario { border-top-color: var(--acento); }
+.tc-plegada { opacity: 0.85; transform: scale(0.97); transition: all 0.4s; }
+@keyframes tc-entrar { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.tc-cerrar {
+  position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; border: none; background: transparent;
+  color: var(--tenue); font-size: 1.2rem; border-radius: 8px;
+}
+.tc-cerrar:hover { background: var(--fondo); color: var(--texto); }
+
+/* Hoja de calendario: mes, día grande, día de la semana. */
+.tc-fecha {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;
+  border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); text-align: center;
+}
+.tc-mes {
+  width: 100%; padding: 3px 0; background: var(--primario-fuerte); color: #fff; font-size: 0.75rem;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.tc-dia { font-family: var(--fuente-titulos); font-size: 2rem; font-weight: 700; line-height: 1.15; color: var(--texto); }
+.tc-semana { padding-bottom: 4px; font-size: 0.78rem; color: var(--texto-suave); text-transform: capitalize; }
+
+.tc-cuerpo { min-width: 0; padding-right: 24px; }
+.tc-estado {
+  display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 9px; border-radius: 999px; color: #92400e; background: var(--aviso-fondo); border: 1px solid var(--aviso-borde);
+}
+.tc-registrada .tc-estado { color: var(--primario-fuerte); background: #ecfeff; border-color: var(--primario); }
+.tc-en_calendario .tc-estado { color: #065f46; background: #ecfdf5; border-color: var(--acento); }
+.tc-hora { margin-top: 6px; font-family: var(--fuente-titulos); font-size: 1.15rem; font-weight: 700; color: var(--texto); }
+.tc-sede { font-weight: 600; color: var(--texto); overflow-wrap: anywhere; }
+.tc-paciente { color: var(--texto-suave); font-size: 0.9rem; overflow-wrap: anywhere; }
+
+.tc-pasos {
+  grid-column: 1 / -1; display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: paso;
+}
+.tc-pasos li {
+  flex: 1; padding-top: 6px; border-top: 3px solid var(--borde); font-size: 0.72rem; color: var(--tenue);
+}
+.tc-pasos li.hecho { border-top-color: var(--acento); color: var(--texto); font-weight: 600; }
+
+.tc-pie { grid-column: 1 / -1; display: grid; gap: 8px; }
+.tc-ayuda { font-size: 0.82rem; color: var(--texto-suave); }
+.tc-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.tc-boton {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; font-size: 0.86rem;
+  font-weight: 600; text-decoration: none; color: var(--primario-fuerte); border: 1px solid var(--borde); background: var(--tarjeta);
+}
+.tc-boton:hover { border-color: var(--primario); background: var(--fondo); }
+
+@media (max-width: 560px) {
+  .tc-ficha { right: 16px; left: 16px; bottom: 16px; width: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .tc-ficha { animation: none; } .tc-plegada { transition: none; } }

@@ -33,7 +33,11 @@ from server.deepgram_stt import ConexionSTT
 from server.mcp_hub import HubMCP
 from server.session import Sesion
 from server.tools import citas as citas_mod
+from server.tools import calendario as calendario_mod
+from server.tools import excel as excel_mod
+from server.tools.calendario import HerramientasCalendario
 from server.tools.citas import HerramientasCitas
+from server.tools.excel import HerramientasExcel
 from server.tools.ips import HerramientasIPS
 
 log = logging.getLogger("cognia.server")
@@ -56,6 +60,7 @@ class Estado:
     hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
     lecciones: Lecciones = field(default_factory=Lecciones)  # memoria entre sesiones (#23)
     citas: HerramientasCitas = field(default_factory=HerramientasCitas)  # solicitudes (SQLite) para /citas
+    calendario: HerramientasCalendario | None = None  # eventos de las solicitudes (#18); se crea con las citas
     conexiones: set[Sesion] = field(default_factory=set)  # sesiones abiertas (para difundir eventos)
     brief: ev.Brief | None = None  # caché: se calcula una vez al arrancar y se envía a cada sesión (#12)
     saludo: str | None = None  # versión hablada del brief para el greeting del Voice Agent
@@ -124,7 +129,10 @@ async def lifespan(_app: FastAPI):
         estado.hub = HubMCP()
         if config.SEMILLAS and (n := await asyncio.to_thread(estado.citas.sembrar)):
             log.info("Cargadas %d solicitudes de ejemplo (data/semillas/citas.json)", n)
-        tools_registry.registrar_servidores(estado.hub, estado.ips, estado.citas)
+        estado.calendario = estado.calendario or HerramientasCalendario(estado.citas)
+        log.info("Calendario: backend %s", estado.calendario.backend)
+        tools_registry.registrar_servidores(estado.hub, estado.ips, estado.citas, estado.calendario,
+                                            HerramientasExcel(estado.citas))
         await estado.hub.iniciar()
         yield
     finally:
@@ -173,6 +181,28 @@ async def api_cita_ics(solicitud_id: int) -> Response:
         return JSONResponse({"error": "solicitud sin fecha u hora, o inexistente"}, status_code=404)
     return Response(contenido, media_type="text/calendar; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="solicitud-{solicitud_id}.ics"'})
+
+
+@app.api_route("/api/citas/excel", methods=["GET", "HEAD"])
+async def api_citas_excel() -> Response:
+    filas = await asyncio.to_thread(estado.citas.solicitudes)
+    contenido = await asyncio.to_thread(excel_mod.construir_excel, filas)
+    return Response(contenido, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="solicitudes-por-ips.xlsx"'})
+
+
+@app.get("/api/calendario")
+async def api_calendario() -> JSONResponse:
+    eventos = await asyncio.to_thread(estado.calendario.eventos) if estado.calendario else []
+    publicos = [{k: e[k] for k in ("solicitud_id", "titulo", "inicio", "fin", "sede")} | {"en_google": bool(e["google_link"])}
+                for e in eventos]
+    return JSONResponse({"backend": estado.calendario.backend if estado.calendario else "local", "eventos": publicos})
+
+
+@app.get("/api/calendario.ics")
+async def api_calendario_ics() -> Response:
+    eventos = await asyncio.to_thread(estado.calendario.eventos) if estado.calendario else []
+    return Response(calendario_mod.feed_ics(eventos), media_type="text/calendar; charset=utf-8")
 
 
 @app.get("/api/brief")

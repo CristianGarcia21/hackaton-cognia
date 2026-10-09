@@ -11,5 +11,6 @@ import "./paneles.js";
 import "./brief.js";
 import "./carita.js";
 import "./inspector.js";
+import "./tarjeta-cita.js"; // ficha visual de la cita (módulo y CSS propios)
 
 iniciar();

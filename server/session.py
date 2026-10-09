@@ -25,7 +25,7 @@ from fastapi import WebSocket
 from rapidfuzz import fuzz
 
 from server import events as ev
-from server import tools_registry
+from server import tarjetas, tools_registry
 from server.deepgram_agent import ErrorAgente
 from server.cognition import emotions
 from server.cognition import verifier
@@ -584,8 +584,8 @@ class Sesion:
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status=r.status, ms=r.ms,
                                     summary=tools_registry.resumen(r.texto)))
             self._turno(turno).tools.append(verifier.ResultadoTool(nombre, args, r.texto))
-            if nombre == "registrar_solicitud_cita" and r.status == "ok":
-                self.emitir(ev.Action(kind="cita", data={"resumen": tools_registry.resumen(r.texto)}, link="/citas"))
+            if (ficha := tarjetas.tarjeta(nombre, args, r.texto)) is not None:  # ficha visual de la cita
+                self.emitir(ficha)
             if (tr := self._trazas.get(turno)) is not None:
                 tr.tool(nombre, r.ms, args, r.texto, r.status + (" (caché)" if r.cache else ""))
             if self.agente is not None:
