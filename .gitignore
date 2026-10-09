@@ -28,6 +28,8 @@ htmlcov/
 # ---- Datos generados en tiempo de ejecución ----
 data/uploads/
 data/kb/
+data/*.db
+data/*.db-*
 outputs/
 *.log
 *.npy
