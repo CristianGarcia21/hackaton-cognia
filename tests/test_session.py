@@ -870,3 +870,18 @@ def test_el_verificador_recibe_las_tools_del_turno_anterior(monkeypatch):
 
     correr(con_sesion(prueba))
     assert vistos[0].previas == [] and [r.nombre for r in vistos[1].previas] == ["buscar_ips"]
+
+
+def test_documento_y_telefono_no_llegan_completos_al_navegador():
+    agente = AgenteFalso(tool="buscar_ips", args='{"municipio": "Cali", "paciente": "María Gómez", "documento": "1020304050", "telefono": "300 123 4567"}')
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "hola"})
+        await esperar(lambda: ("inactivo", 1) in ws.estados() and ws.de_tipo(ev.Trace))
+
+    ws, _, _ = correr(con_sesion(prueba, agente))
+    salida = " ".join(e.model_dump_json() for e in ws.eventos)
+    assert "1020304050" not in salida and "3001234567" not in salida and "123 4567" not in salida
+    assert "María Gómez" not in salida
+    t = ws.de_tipo(ev.ToolCall)[0]
+    assert t.args["documento"] == "***4050" and t.args["telefono"] == "***4567" and t.args["paciente"] == "María G."

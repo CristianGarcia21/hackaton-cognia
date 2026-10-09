@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -577,14 +578,15 @@ class Sesion:
 
     async def _ejecutar_tool(self, fid: str, nombre: str, argumentos) -> None:
         turno = self.maquina.turn_id
-        args = _args_para_ui(argumentos)
+        completos = _args_para_ui(argumentos)
+        args = _sin_datos_personales(completos)  # lo que ve el navegador (Inspector y traza); al hub van completos
         self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status="running"))
         try:
             r = await tools_registry.despachar(self.hub, nombre, argumentos)
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status=r.status, ms=r.ms,
                                     summary=tools_registry.resumen(r.texto)))
-            self._turno(turno).tools.append(verifier.ResultadoTool(nombre, args, r.texto))
-            if (ficha := tarjetas.tarjeta(nombre, args, r.texto)) is not None:  # ficha visual de la cita
+            self._turno(turno).tools.append(verifier.ResultadoTool(nombre, completos, r.texto))
+            if (ficha := tarjetas.tarjeta(nombre, completos, r.texto)) is not None:  # la ficha abrevia el nombre  # ficha visual de la cita
                 self.emitir(ficha)
             if (tr := self._trazas.get(turno)) is not None:
                 tr.tool(nombre, r.ms, args, r.texto, r.status + (" (caché)" if r.cache else ""))
@@ -615,6 +617,22 @@ def _es_eco(texto: str, dichos: deque) -> bool:
     if len(texto) < 12:
         return False
     return any(fuzz.partial_ratio(texto.lower(), d.lower()) >= UMBRAL_ECO for d in dichos)
+
+
+_PERSONALES = {"documento", "telefono"}
+
+
+def _sin_datos_personales(args: dict) -> dict:
+    """Documento y teléfono → últimos 4 dígitos; paciente → nombre abreviado. La pantalla puede estar proyectada
+    y el Inspector muestra los argumentos de cada tool."""
+    from server.tools.citas import _enmascarar
+    limpio = dict(args)
+    for k in _PERSONALES & limpio.keys():
+        digitos = re.sub(r"\W", "", str(limpio[k] or ""))
+        limpio[k] = f"***{digitos[-4:]}" if digitos else ""
+    if "paciente" in limpio:
+        limpio["paciente"] = _enmascarar(str(limpio["paciente"] or ""))
+    return limpio
 
 
 def _args_para_ui(argumentos) -> dict:
