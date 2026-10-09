@@ -39,7 +39,8 @@ TITULO = "Solicitud de cita — pendiente de confirmación"
 ZONA = "America/Bogota"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 GOOGLE_EVENTOS = "https://www.googleapis.com/calendar/v3/calendars/{cal}/events"
-TIMEOUT_GOOGLE_S = 6.0
+TIMEOUT_GOOGLE_S = 4.0
+TIMEOUT_GOOGLE_TOTAL_S = 5.0
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS eventos (
@@ -197,8 +198,9 @@ class HerramientasCalendario:
         google_id = google_link = None
         if self.google:
             try:
-                google_id, google_link = await self.google.crear(f"{TITULO} · {sede}", inicio, fin,
-                                                                 detalle_con(s["paciente"]), sede)
+                # Tope total menor al del hub (8 s): si Google tarda, igual queda el evento local.
+                google_id, google_link = await asyncio.wait_for(self.google.crear(
+                    f"{TITULO} · {sede}", inicio, fin, detalle_con(s["paciente"]), sede), TIMEOUT_GOOGLE_TOTAL_S)
             except Exception as e:  # noqa: BLE001 — Google caído o sin permisos: queda el evento local
                 log.warning("Google Calendar no disponible (%s: %s)", type(e).__name__, str(e)[:200])
         evento = await asyncio.to_thread(self._guardar, {
