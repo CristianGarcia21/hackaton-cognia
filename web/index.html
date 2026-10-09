@@ -53,9 +53,16 @@
         <div class="carga-barra"><div id="carga-progreso"></div></div>
         <p id="carga-texto" class="tenue"></p>
       </div>
-      <div id="brief" class="brief">
-        <p class="tenue">Esperando el resumen de la fuente…</p>
+      <div id="brief" class="brief" aria-live="polite">
+        <p id="brief-resumen" class="tenue">Esperando el resumen de la fuente…</p>
+        <ul id="brief-cifras" class="brief-cifras" aria-label="Cifras de la fuente"></ul>
+        <ul id="brief-puntos" class="brief-puntos"></ul>
       </div>
+      <section id="brief-preguntas-bloque" class="brief-preguntas-bloque" aria-labelledby="titulo-preguntas" hidden>
+        <h2 id="titulo-preguntas">Pregúntale al agente</h2>
+        <p class="tenue brief-ayuda">Pulsa una pregunta o hazla por voz.</p>
+        <div id="brief-preguntas" class="brief-preguntas"></div>
+      </section>
     </aside>
 
     <section class="panel panel-central" aria-labelledby="titulo-transcripcion">

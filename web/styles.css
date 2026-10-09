@@ -139,7 +139,24 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .carga-barra { height: 8px; border-radius: 999px; background: var(--borde); overflow: hidden; }
 #carga-progreso { height: 100%; width: 0; background: var(--acento); transition: width 300ms ease; }
 .carga p { margin: 6px 0 0; font-size: 0.85rem; }
+.brief { display: flex; flex-direction: column; gap: 10px; }
 .brief p { margin: 0; }
+#brief-resumen:not(.tenue) { font-weight: 500; }
+.brief-cifras { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.brief-cifras li { padding: 8px 10px; border-radius: 10px; background: var(--fondo); border: 1px solid var(--borde); }
+.brief-cifras strong { display: block; font-family: var(--fuente-titulos); font-size: 1.15rem; color: var(--primario-fuerte); }
+.brief-cifras span { font-size: 0.8rem; color: var(--texto-suave); }
+.brief-puntos { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; }
+.brief-preguntas-bloque { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.brief-ayuda { margin: 0; font-size: 0.85rem; }
+.brief-preguntas { display: flex; flex-direction: column; gap: 8px; }
+.pregunta {
+  min-height: 44px; padding: 8px 12px; text-align: left; border-radius: 10px; font-weight: 500;
+  border: 1px solid var(--primario); background: color-mix(in srgb, var(--primario) 6%, white); color: var(--primario-fuerte);
+  transition: background-color 200ms ease;
+}
+.pregunta:hover:not(:disabled) { background: color-mix(in srgb, var(--primario) 14%, white); }
+.pregunta.enviada { border-style: dashed; }
 
 /* ---------------- Transcripción ---------------- */
 .hablantes { display: flex; gap: 8px; flex-wrap: wrap; }

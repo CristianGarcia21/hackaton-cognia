@@ -9,6 +9,8 @@ from server import events as ev
 from server import main
 from server.main import app, componentes
 
+ABRIR_AGENTE_REAL = main._abrir_agente  # el fixture lo reemplaza; el test del saludo usa el real
+
 
 from server.data import datos_gov
 
@@ -21,6 +23,17 @@ async def _catalogo_falso(cliente, on_status=None):
                                         progress=1))
     return datos_gov.Catalogo(total_filas=41427, municipios=[("CALI", "Cali")],
                               capacidades=[("CAMAS", "Intensiva Adultos")])
+
+
+BRIEF_FALSO = ev.Brief(summary="Registro de IPS de prueba.", key_points=["41.427 registros"],
+                       questions=["¿Cuántas camas de UCI hay en Antioquia?", "¿Qué IPS hay en Cali?",
+                                  "Necesito una cita en Cali"], stats={"registros": 41427})
+
+
+async def _brief_falso(datos, catalogo):
+    """Sin datos.gov.co ni Groq: el brief real se prueba en tests/test_brief.py."""
+    from server.cognition.brief import Resultado
+    return Resultado(BRIEF_FALSO, "Hola, soy Kognia. Te ayudo con las IPS de Colombia.", con_llm=False)
 
 
 def _esperar_listo(c: TestClient) -> None:
@@ -47,6 +60,7 @@ def client(monkeypatch):
     monkeypatch.setattr(main, "_abrir_agente", _sin_deepgram)
     monkeypatch.setattr(main, "_abrir_stt", _sin_stt)
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
+    monkeypatch.setattr(main.brief_fuente, "generar", _brief_falso)
     monkeypatch.setattr(main, "estado", main.Estado())
     componentes.clear()
     with TestClient(app) as c:
@@ -111,6 +125,7 @@ def test_ws_mensaje_invalido_devuelve_error_y_sigue_abierto(client):
     with client.websocket_connect("/ws/voz") as ws:
         ws.receive_text()  # ready
         ws.receive_text()  # source_status de datos.gov.co
+        ws.receive_text()  # brief (#12)
         ws.send_text("no es json")
         error = ev.parse_servidor(ws.receive_text())
         assert isinstance(error, ev.ErrorEvento) and error.where == "cliente" and error.recoverable
@@ -130,6 +145,7 @@ def test_ws_error_inesperado_avisa_al_cliente_antes_de_cerrar(client, monkeypatc
     with client.websocket_connect("/ws/voz") as ws:
         ws.receive_text()  # ready
         ws.receive_text()  # source_status de datos.gov.co
+        ws.receive_text()  # brief (#12)
         ws.send_text('{"type": "stop"}')
         error = ev.parse_servidor(ws.receive_text())
         assert isinstance(error, ev.ErrorEvento) and error.where == "servidor" and not error.recoverable
@@ -228,3 +244,37 @@ def test_si_el_hub_se_cae_health_queda_degradado(client):
         assert client.get("/api/ready").status_code == 503
     finally:
         servidor.cliente = cliente
+
+
+# ------------------------------- brief (#12) -------------------------------
+
+def test_api_brief_devuelve_el_brief_en_cache(client):
+    r = client.get("/api/brief")
+    assert r.status_code == 200 and r.json()["summary"] == "Registro de IPS de prueba."
+    assert len(r.json()["questions"]) == 3
+
+
+def test_api_brief_503_mientras_se_calcula(client):
+    main.estado.brief = None
+    assert client.get("/api/brief").status_code == 503
+
+
+def test_ws_envia_el_brief_al_conectar(client):
+    with client.websocket_connect("/ws/voz") as ws:
+        tipos = [ev.parse_servidor(ws.receive_text()).type for _ in range(3)]
+    assert tipos[0] == "ready" and "brief" in tipos
+
+
+def test_el_saludo_del_brief_va_al_greeting_del_agente(client, monkeypatch):
+    capturado = {}
+
+    async def abrir(_key, settings):
+        capturado.update(settings)
+        raise RuntimeError("no abrir de verdad")
+
+    monkeypatch.setattr(main.ConexionAgente, "abrir", abrir)
+    monkeypatch.setattr(main.config, "DEEPGRAM_API_KEY", "x")
+    import asyncio
+    with pytest.raises(RuntimeError):
+        asyncio.run(ABRIR_AGENTE_REAL([]))
+    assert capturado["agent"]["greeting"] == "Hola, soy Kognia. Te ayudo con las IPS de Colombia."

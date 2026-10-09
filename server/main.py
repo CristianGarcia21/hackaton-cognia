@@ -4,6 +4,7 @@
 - GET  /api/health   LIVENESS: 200 mientras el proceso responde; el cuerpo dice "ok" o "degradado"
                      (lo usa el healthcheck de Railway: un componente lento no impide el deploy)
 - GET  /api/ready    READINESS: 200 solo cuando todos los componentes están listos, si no 503
+- GET  /api/brief    brief de la fuente (spec §9.5); 503 mientras se calcula
 - WS   /ws/voz       contrato en server/events.py
 
 Al arrancar: catálogo de datos.gov.co (en segundo plano) y hub MCP con las tools (#9). Cada WebSocket es
@@ -23,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from server import config
 from server import events as ev
 from server import tools_registry
+from server.cognition import brief as brief_fuente
 from server.data import datos_gov
 from server.deepgram_agent import ConexionAgente, settings
 from server.deepgram_stt import ConexionSTT
@@ -35,6 +37,7 @@ log = logging.getLogger("cognia.server")
 # Componente -> listo. Cada subsistema (datos_gov, MCP, brief...) se registra aquí al arrancar.
 componentes: dict[str, bool] = {}
 REINTENTO_DATOS_S = 15.0  # si datos.gov.co no responde al arrancar, se reintenta cada N segundos
+REINTENTO_BRIEF_S = 30.0
 
 
 @dataclass
@@ -48,6 +51,8 @@ class Estado:
     ips: HerramientasIPS | None = None  # tools de IPS: reciben el catálogo cuando termina de cargar
     hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
     conexiones: set[Sesion] = field(default_factory=set)  # sesiones abiertas (para difundir eventos)
+    brief: ev.Brief | None = None  # caché: se calcula una vez al arrancar y se envía a cada sesión (#12)
+    saludo: str | None = None  # versión hablada del brief para el greeting del Voice Agent
 
 
 estado = Estado()
@@ -74,12 +79,32 @@ async def _conectar_datos_gov() -> None:
             if estado.ips is not None:
                 estado.ips.catalogo = estado.catalogo
             componentes["datos_gov"] = True
+            await _preparar_brief()
         except datos_gov.FuenteNoDisponible as e:  # caída de la API: /api/ready queda en 503 y se reintenta
             log.warning("datos.gov.co no disponible (%s); reintento en %ss", e, REINTENTO_DATOS_S)
             await asyncio.sleep(REINTENTO_DATOS_S)
         except Exception:  # noqa: BLE001 — un bug (consulta inválida, respuesta inesperada): no reintentar
             log.exception("Error inesperado cargando el catálogo de datos.gov.co; no se reintenta")
             return
+
+
+async def _preparar_brief() -> None:
+    """Brief con estadísticas reales (+ LLM o respaldo). Si datos.gov.co falla, reintenta sin tumbar nada."""
+    componentes["brief"] = False
+    while estado.brief is None:
+        try:
+            r = await brief_fuente.generar(estado.datos, estado.catalogo)
+        except datos_gov.FuenteNoDisponible as e:
+            log.warning("Brief: datos.gov.co no disponible (%s); reintento en %ss", e, REINTENTO_BRIEF_S)
+            await asyncio.sleep(REINTENTO_BRIEF_S)
+            continue
+        except Exception:  # noqa: BLE001 — un bug no debe tumbar el arranque: sin brief la voz sigue
+            log.exception("Error inesperado generando el brief; se omite")
+            return
+        estado.brief, estado.saludo = r.brief, r.saludo
+        componentes["brief"] = True
+        log.info("Brief listo (%s)", "LLM" if r.con_llm else "respaldo sin LLM")
+        await _difundir(r.brief)
 
 
 @asynccontextmanager
@@ -120,6 +145,13 @@ def health() -> dict:
     return {"status": "ok" if all(c.values()) else "degradado", "componentes": c}
 
 
+@app.get("/api/brief")
+def brief() -> JSONResponse:
+    if estado.brief is None:
+        return JSONResponse({"ready": False, "detail": "El brief se está calculando"}, status_code=503)
+    return JSONResponse(estado.brief.model_dump(mode="json"))
+
+
 @app.get("/api/ready")
 def ready() -> JSONResponse:
     c = _componentes()
@@ -132,9 +164,10 @@ async def _enviar(ws: WebSocket, evento) -> None:
 
 
 async def _abrir_agente(funciones: list[dict], historial: list[dict] | None = None) -> ConexionAgente:
+    extra = {"saludo": estado.saludo} if estado.saludo else {}  # saludo del brief (#12); sin brief, el de por defecto
     return await ConexionAgente.abrir(config.DEEPGRAM_API_KEY, settings(
         funciones, groq_key=config.GROQ_API_KEY, groq_key_2=config.GROQ_API_KEY_2, modelo=config.VOICE_LLM,
-        voz=config.VOZ, historial=historial))
+        voz=config.VOZ, historial=historial, **extra))
 
 
 async def _abrir_stt() -> ConexionSTT:
@@ -151,6 +184,8 @@ async def ws_voz(ws: WebSocket) -> None:
     iniciales = [ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"])]
     if estado.fuente is not None:
         iniciales.append(estado.fuente)
+    if estado.brief is not None:
+        iniciales.append(estado.brief)
     estado.conexiones.add(sesion)  # antes de correr: así no se pierde un "listo" que llegue ahora
     try:
         await sesion.correr(iniciales)

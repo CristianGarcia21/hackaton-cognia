@@ -25,7 +25,7 @@ const ui = {
   cerrarError: $("cerrar-error"),
   estado: $("estado"), estadoTexto: $("estado-texto"), estadoTurno: $("estado-turno"),
   transcripcion: $("transcripcion"), hablantes: $("hablantes"), irAlFinal: $("ir-al-final"),
-  carga: $("carga"), cargaProgreso: $("carga-progreso"), cargaTexto: $("carga-texto"), brief: $("brief"),
+  carga: $("carga"), cargaProgreso: $("carga-progreso"), cargaTexto: $("carga-texto"),
 };
 
 // ============================ Conexión ============================
@@ -250,12 +250,6 @@ const manejadores = {
     ui.cargaProgreso.style.width = `${Math.round(e.progress * 100)}%`;
     const total = e.total_rows ? ` de ${e.total_rows.toLocaleString("es-CO")}` : "";
     ui.cargaTexto.textContent = `${e.source}: ${e.status} · ${e.rows.toLocaleString("es-CO")}${total} filas`;
-  },
-  brief(e) {
-    // Versión mínima; el panel completo con preguntas pulsables es el issue #12.
-    const p = document.createElement("p");
-    p.textContent = e.summary;
-    ui.brief.replaceChildren(p);
   },
   error(e) {
     ui.avisoErrorTexto.textContent = `${e.message} (${e.where})`;

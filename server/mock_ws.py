@@ -130,7 +130,7 @@ def conexion() -> list[Paso]:
             questions=["¿Cuántas camas de UCI hay en Antioquia?", "¿Qué IPS públicas tienen quirófano en Cali?",
                        "¿Cómo se distribuyen las ambulancias por departamento?",
                        "Necesito una cita para una cirugía en Medellín"],
-            stats={"filas": total, "sedes": 10921, "prestadores": 9320},
+            stats={"registros": total, "sedes": 10921, "departamentos": 33, "municipios": 1105, "sin_nivel_pct": 61},
         ),
         ev.EstadoEvento(state=ev.EstadoConversacion.INACTIVO),
     ]
