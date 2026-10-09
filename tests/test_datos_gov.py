@@ -444,3 +444,8 @@ def test_soql_de_capacidad_no_mezcla_grupos():
 def test_grupo_solo_filtra_por_grupo():
     r = catalogo_realista().resolver_capacidad("ambulancias")
     assert r.campo == "nom_grupo_capacidad" and r.soql() == "nom_grupo_capacidad IN ('AMBULANCIAS')"
+
+
+def test_tipo_que_no_existe_en_el_grupo_dicho_pide_aclaracion():
+    r = catalogo_realista().resolver_capacidad("camas de urgencias")
+    assert r.filtros == [] and not r.exacto and r.sugerencias == ["Urgencias (CONSULTORIOS)"]

@@ -397,6 +397,10 @@ class Catalogo:
                 tipos = self._refinar(q, tipos, raices)
                 if tipos:
                     return self._res_capacidad(dicho, tipos)
+                if grupo:  # "camas de urgencias": ese tipo no existe en el grupo dicho → no inventar
+                    en_otros = [p for p in self.capacidades if any(r in normalizar(p[1]) for r in raices)]
+                    return Resolucion(dicho, "nom_descripcion_capacidad", exacto=False,
+                                      sugerencias=[f"{t} ({g})" for g, t in sorted(set(en_otros))][:3])
         # 2. Nombre de tipo dicho literalmente ("ambulancia medicalizada", "camas de obstetricia").
         contenidos = [p for p in pares if _contiene_frase(q, normalizar(p[1]))]
         contenidos = [p for p in contenidos  # quitar los que están incluidos en otro más largo
