@@ -779,3 +779,38 @@ def test_settings_con_historial_no_saluda_y_lleva_el_contexto():
     agente = DA.settings([], groq_key="k", historial=h)["agent"]
     assert agente["context"] == {"messages": h} and "greeting" not in agente
     assert "greeting" in DA.settings([], groq_key="k")["agent"]
+
+
+def test_un_texto_escrito_durante_la_reconexion_espera_y_se_envia(monkeypatch):
+    monkeypatch.setattr(S, "ESPERA_RECONEXION_S", 0.3)
+    primero, segundo = AgenteFalso(), AgenteFalso()
+    agentes = [primero, segundo]
+
+    async def prueba(ws, sesion):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.agente is primero)
+        primero.empujar({"type": "History", "role": "user", "content": "hola"})
+        await esperar(lambda: sesion._historial)
+        await primero.cerrar()
+        await esperar(lambda: ws.de_tipo(ev.ErrorEvento))  # reconectando…
+        ws.texto({"type": "text_input", "text": "¿sigues ahí?"})  # llega en plena reconexión
+        await esperar(lambda: "InjectUserMessage" in segundo.tipos_enviados())
+
+    async def correr_con_dos():
+        hub = hub_de_prueba()
+        await hub.iniciar()
+
+        async def abrir(_, historial=None):
+            return agentes.pop(0)
+
+        ws = WSFalso()
+        sesion = S.Sesion(ws, "s1", hub, abrir)
+        tarea = asyncio.create_task(sesion.correr([]))
+        try:
+            await prueba(ws, sesion)
+        finally:
+            ws.cerrar()
+            await asyncio.wait_for(tarea, 3)
+            await hub.cerrar()
+
+    correr(correr_con_dos())

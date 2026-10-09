@@ -244,6 +244,11 @@ class Sesion:
             await listo.wait()
             if self.agente is not None:
                 await self.agente.enviar(mensaje)
+            elif mensaje.get("type") == "InjectUserMessage":
+                self._textos_pendientes = max(0, self._textos_pendientes - 1)
+                if self._historial:  # si la voz nunca abrió, ya se mostró "la voz no está disponible"
+                    self.emitir(ev.ErrorEvento(where="voz", message="No pude enviar tu mensaje porque la voz no "
+                                               "está conectada; inténtalo de nuevo", recoverable=True))
         self._tarea(esperar_y_enviar(self._listo), "T2-inyectar")
 
     async def _agente(self) -> None:
@@ -269,6 +274,7 @@ class Sesion:
             log.warning("Sesión %s: conexión con Deepgram cortada; reconecto en %.1fs", self.session_id, espera)
             self.emitir(ev.ErrorEvento(where="voz", message="Se cortó la conexión de voz; reconectando…",
                                        recoverable=True))
+            self._listo = asyncio.Event()  # lo que se escriba mientras tanto espera a la reconexión
             await asyncio.sleep(espera)
             espera = min(espera * 2, 8.0)
 
