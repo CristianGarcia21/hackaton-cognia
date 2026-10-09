@@ -49,6 +49,7 @@ class Turno:
     pregunta: str = ""
     tools: list[ResultadoTool] = field(default_factory=list)
     respuesta: str = ""
+    previas: list[ResultadoTool] = field(default_factory=list)  # tools de turnos anteriores (también son datos)
 
 
 class Veredicto(BaseModel):
@@ -78,13 +79,19 @@ class Veredicto(BaseModel):
 
 def _sin_datos(turno: Turno) -> bool:
     """Sin tools y sin cifras: no afirma datos de la fuente (repregunta, saludo, 123)."""
-    return not turno.tools and not _DIGITO.search(turno.respuesta)
+    return not turno.tools and not turno.previas and not _DIGITO.search(turno.respuesta)
+
+
+def _json_tools(tools: list[ResultadoTool]) -> str:
+    filas = [{"tool": t.nombre, "args": t.args, "resultado": t.resultado[:MAX_RESULTADO]} for t in tools]
+    return json.dumps(filas, ensure_ascii=False, indent=1) if filas else "(ninguna tool)"
 
 
 def _contexto(turno: Turno) -> str:
-    tools = [{"tool": t.nombre, "args": t.args, "resultado": t.resultado[:MAX_RESULTADO]} for t in turno.tools]
+    previas = (f"RESULTADOS DE TOOLS DE TURNOS ANTERIORES (también son datos de datos.gov.co válidos):\n"
+               f"{_json_tools(turno.previas)}\n\n" if turno.previas else "")
     return (f"PREGUNTA DEL USUARIO:\n{turno.pregunta or '(sin texto)'}\n\n"
-            f"RESULTADOS DE TOOLS:\n{json.dumps(tools, ensure_ascii=False, indent=1) if tools else '(ninguna tool)'}\n\n"
+            f"RESULTADOS DE TOOLS DE ESTE TURNO:\n{_json_tools(turno.tools)}\n\n{previas}"
             f"RESPUESTA DEL ASISTENTE:\n{turno.respuesta}")
 
 

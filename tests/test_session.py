@@ -852,3 +852,21 @@ def test_lo_no_respaldado_queda_como_regla(monkeypatch, tmp_path):
     ws, agente, _ = correr(con_sesion(prueba))
     assert ws.de_tipo(ev.Lesson)[0].kind == "regla" and "720" in lecciones.para_prompt()
     assert any(m["type"] == "UpdatePrompt" and "LECCIÓN APRENDIDA" in m["prompt"] for m in agente.enviados)
+
+
+def test_el_verificador_recibe_las_tools_del_turno_anterior(monkeypatch):
+    vistos = []
+
+    async def verificar(turno):
+        vistos.append(turno)
+        return None
+    monkeypatch.setattr(S.verifier, "verificar", verificar)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "¿hospitales en Medellín?"})
+        await esperar(lambda: len(vistos) == 1)
+        ws.texto({"type": "text_input", "text": "¿y el segundo?"})
+        await esperar(lambda: len(vistos) == 2)
+
+    correr(con_sesion(prueba))
+    assert vistos[0].previas == [] and [r.nombre for r in vistos[1].previas] == ["buscar_ips"]

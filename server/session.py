@@ -505,7 +505,8 @@ class Sesion:
         if n < 1 or t is None or not t.respuesta or n in self._verificados:
             return
         self._verificados.add(n)
-        copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta)
+        previas = [r for k in sorted(self._turnos) if n - 3 <= k < n for r in self._turnos[k].tools]
+        copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta, previas)
         if (tr := self._trazas.get(n)) is not None:
             tr.pendientes.add("verificador")
         self._verificador = self._tarea(self._verificar(n, copia), "T6-verificador")

@@ -66,3 +66,10 @@ def test_estado_se_normaliza(crudo, esperado):
 
 def test_correccion_null_en_texto_es_none():
     assert V.Veredicto(estado="no_respaldado", correccion="null").correccion is None
+
+
+def test_el_verificador_ve_las_tools_de_turnos_anteriores(monkeypatch):
+    vistos = llm_que_responde(monkeypatch, estado="respaldado")
+    previa = V.ResultadoTool("detalle_ips", {"nombre": "San Juan de Dios"}, "CLINICA PSIQUIATRICA SAN JUAN DE DIOS · CALLE 72 # 28-20")
+    v = correr(V.verificar(V.Turno("¿la dirección?", [], "Queda en la calle 72 número 28-20.", [previa])))
+    assert v.estado == "respaldado" and "TURNOS ANTERIORES" in vistos["contexto"] and "CALLE 72" in vistos["contexto"]
