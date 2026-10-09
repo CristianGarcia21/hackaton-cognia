@@ -20,6 +20,7 @@ from pathlib import Path
 
 from server import config
 from server import events as ev
+from server.seguridad import parece_inyeccion
 
 log = logging.getLogger("cognia.lessons")
 
@@ -104,6 +105,9 @@ class Lecciones:
         contenido = " ".join(str(contenido).split())[:300]
         if tipo not in TIPOS or not contenido:
             return None
+        if parece_inyeccion(contenido):  # se agregaría al prompt de TODAS las sesiones: no se guarda
+            log.warning("Lección descartada por parecer inyección de prompt (%s): %s", origen[:80], contenido[:120])
+            return None
         try:
             nueva = await asyncio.to_thread(self._agregar, tipo, contenido, origen[:80])
         except sqlite3.Error as e:
@@ -119,7 +123,8 @@ class Lecciones:
 
     def para_prompt(self) -> str:
         """Reglas y sinónimos aprendidos, para agregar al prompt de sistema ("" si no hay)."""
-        utiles = [l for l in self.todas() if l["tipo"] in ("regla", "sinonimo")][-MAX_EN_PROMPT:]
+        utiles = [l for l in self.todas() if l["tipo"] in ("regla", "sinonimo")
+                  and not parece_inyeccion(l["contenido"])][-MAX_EN_PROMPT:]  # defensa también al leer
         if not utiles:
             return ""
         lineas = [f"- {'Sinónimo' if l['tipo'] == 'sinonimo' else 'Regla'}: {l['contenido']}" for l in utiles]

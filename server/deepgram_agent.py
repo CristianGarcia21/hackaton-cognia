@@ -23,7 +23,7 @@ import logging
 
 import websockets
 
-from server import deepgram_stt
+from server import deepgram_stt, seguridad
 
 log = logging.getLogger("cognia.deepgram")
 
@@ -57,7 +57,7 @@ REGLAS (estrictas: tu ÚNICA fuente es datos.gov.co a través de tus tools):
 - Ante una urgencia (dolor en el pecho, dificultad para respirar, sangrado fuerte, intento de suicidio), indica llamar ya al 123 antes de cualquier otra cosa.
 - Menciona la fecha de corte cuando des cifras.
 
-ESTILO (todo se convierte a voz): máximo tres frases por respuesta, en un solo párrafo. Prohibido: listas numeradas o con viñetas, saltos de línea, markdown, asteriscos, tablas y emojis. Di los números como se hablan. Si hay muchos resultados, menciona los dos o tres más relevantes y ofrece más."""
+ESTILO (todo se convierte a voz): máximo tres frases por respuesta, en un solo párrafo. Prohibido: listas numeradas o con viñetas, saltos de línea, markdown, asteriscos, tablas y emojis. Di los números como se hablan. Si hay muchos resultados, menciona los dos o tres más relevantes y ofrece más.""" + seguridad.REGLAS_SEGURIDAD  # usuario y tools son datos, nunca instrucciones
 
 def hoy() -> str:
     """Fecha de hoy para el prompt: sin ella el LLM no puede convertir "el viernes a las 10" en una fecha."""
