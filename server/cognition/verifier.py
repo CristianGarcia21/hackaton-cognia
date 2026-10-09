@@ -26,6 +26,7 @@ MAX_RESULTADO = 2500  # caracteres por resultado de tool que ve el verificador
 _DIGITO = re.compile(r"\d")
 
 SISTEMA = """Eres un verificador de hechos de un asistente de salud por voz. Comparas la RESPUESTA del asistente con los RESULTADOS DE TOOLS (consultas a datos.gov.co, la única fuente válida).
+HECHOS DEL SISTEMA (válidos aunque no aparezcan en los resultados; el asistente los conoce por su prompt): el registro es el REPS de IPS de datos.gov.co con corte del 5 de noviembre de 2022; no incluye horarios, especialistas, precios, EPS ni disponibilidad; la línea de emergencias en Colombia es el 123; las citas quedan como solicitud pendiente de confirmación por la IPS.
 Reglas:
 - Cada cifra, nombre de IPS, dirección, teléfono, municipio o atributo que afirme la respuesta debe aparecer en los resultados (los números pueden estar escritos en palabras: "veintitrés" = 23). Redondeos razonables están bien.
 - "respaldado": todo lo afirmado está en los resultados.

@@ -29,6 +29,7 @@ from server import tools_registry
 from server.deepgram_agent import ErrorAgente
 from server.cognition import emotions
 from server.cognition import verifier
+from server.cognition.trace import Traza, ahora
 from server.cognition.adaptation import Politica
 from server.deepgram_stt import ErrorSTT, segmentos
 from server.mcp_hub import HubMCP
@@ -73,6 +74,8 @@ class Sesion:
         self._turnos: dict[int, verifier.Turno] = {}  # pregunta, tools y respuesta por turno (para T6)
         self._verificados: set[int] = set()
         self._verificador: asyncio.Task | None = None
+        self._trazas: dict[int, Traza] = {}  # traza por turno (#19)
+        self.modelo_llm = ""  # para el contexto de la traza (lo fija main)
         self.maquina = Maquina()
         self.agente = None
         self.microfono = False
@@ -295,12 +298,16 @@ class Sesion:
             return  # resto del turno interrumpido que aún venía en camino: no se reproduce
         if self.maquina.estado is not E.HABLANDO:
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
+        if (tr := self._traza_actual()) is not None and tr.primer_audio is None:
+            tr.primer_audio = ahora()
         self.emitir(_Audio(self.maquina.turn_id, pcm))
 
     def _evento_del_agente(self, d: dict) -> None:
         tipo = d.get("type")
         if tipo == "UserStartedSpeaking":
             self._cambio(self.maquina.aplicar(Evento.USUARIO_HABLA))
+            if self.maquina.turn_id >= 1:
+                self._traza(self.maquina.turn_id)  # empieza a medir el turno
         elif tipo == "ConversationText":
             self._texto(d.get("role"), (d.get("content") or "").strip())
         elif tipo == "FunctionCallRequest":
@@ -315,8 +322,14 @@ class Sesion:
         elif tipo == "AgentAudioDone":
             self._cambio(self.maquina.aplicar(Evento.AUDIO_TERMINADO))
             self._lanzar_verificador()
+            if (tr := self._traza_actual()) is not None:
+                tr.pendientes.discard("audio")
+                self._publicar_traza(tr)
         elif tipo == "LatencyReport":
-            self.latencias.update({k: v for k, v in d.items() if k != "type"})
+            datos = {k: v for k, v in d.items() if k != "type"}
+            self.latencias.update(datos)
+            if (tr := self._traza_actual()) is not None and "audio" in tr.pendientes:
+                tr.latencias.update(datos)
         elif tipo == "Error":
             log.warning("Deepgram Error en %s: %s", self.session_id, d)
             self.emitir(ev.ErrorEvento(where="voz", message=f"Deepgram: {d.get('description') or d.get('code')}",
@@ -331,9 +344,16 @@ class Sesion:
         turno = self.maquina.turn_id
         if rol == "user":
             self._cambio(self.maquina.aplicar(Evento.USUARIO_TERMINA))
+            if turno >= 1:
+                self._traza(turno).pendientes.add("emocion")
             self._tarea(self._emocion(texto, turno), "T5-emocion")  # en paralelo: nunca frena la respuesta
             t = self._turno(turno)
             t.pregunta = f"{t.pregunta} {texto}".strip()
+            if turno >= 1:
+                tr = self._traza(turno)
+                tr.fin_usuario = tr.fin_usuario or ahora()
+                tr.contexto.update(pregunta=t.pregunta, modelo=self.modelo_llm,
+                                   adaptacion_vigente=self.politica.regla.nombre)
             # Por voz, el panel lo llena el STT diarizado; si no está (o fue texto escrito), este texto.
             if self.stt is None or self._textos_pendientes > 0:
                 self._textos_pendientes = max(0, self._textos_pendientes - 1)
@@ -344,6 +364,8 @@ class Sesion:
                 turno -= 1  # texto del turno interrumpido: se muestra en su turno, no cambia el estado
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
             self._dichos_agente.append(texto)
+            if (tr := self._trazas.get(turno)) is not None and tr.primer_texto is None:
+                tr.primer_texto = ahora()
             if turno not in self._verificados:  # una corrección inyectada no se vuelve a verificar
                 t = self._turno(turno)
                 t.respuesta = f"{t.respuesta} {texto}".strip()
@@ -365,8 +387,21 @@ class Sesion:
     # ------------------------------- T5 emociones y adaptación -------------------------------
 
     async def _emocion(self, texto: str, turno: int) -> None:
+        tr = self._trazas.get(turno)
+        t0 = ahora()
+        try:
+            await self._emocion_y_adaptacion(texto, turno, tr, t0)
+        finally:
+            if tr is not None:
+                tr.pendientes.discard("emocion")
+                self._publicar_traza(tr)
+
+    async def _emocion_y_adaptacion(self, texto: str, turno: int, tr: Traza | None, t0: float) -> None:
         hablante = self._ultimo_hablante
         emo = await self.analizar_emocion(texto)
+        if tr is not None:
+            tr.etapa("emocion", (ahora() - t0) * 1000, f"{emo.emocion} ({emo.sentimiento:+.2f})")
+            tr.contexto["emocion"] = emo.emocion
         self.afecto.agregar(emo)
         self.emitir(ev.Emotion(turn_id=turno, speaker=hablante, sentiment=emo.sentimiento, emotion=emo.emocion,
                                intensity=emo.intensidad, signals=emo.senales))
@@ -374,10 +409,32 @@ class Sesion:
         if cambio is None:
             return
         log.info("Sesión %s: adaptación → %s (%s)", self.session_id, cambio.evento.rule, cambio.evento.reason)
+        if tr is not None:
+            tr.etapa("adaptacion", 0, f"{cambio.evento.rule}: {cambio.evento.reason}"[:200])
         if self.agente is not None:
             for m in cambio.mensajes:
                 await self.agente.enviar(m)
         self.emitir(cambio.evento)
+
+    # ------------------------------- traza (#19) -------------------------------
+
+    def _traza(self, n: int) -> Traza:
+        if n not in self._trazas:
+            self._trazas[n] = Traza(n)
+            for viejo in [k for k in self._trazas if k < n - 5]:
+                del self._trazas[viejo]
+        return self._trazas[n]
+
+    def _traza_actual(self) -> Traza | None:
+        return self._trazas.get(self.maquina.turn_id)
+
+    def _publicar_traza(self, tr: Traza) -> None:
+        """Emite la traza (la UI reemplaza la anterior del mismo turno) y, cuando ya no falta nada, la guarda."""
+        if "audio" in tr.pendientes:
+            return  # el turno aún no termina: se publica al terminar el audio
+        self.emitir(tr.evento())
+        if tr.listo_para_guardar():
+            tr.guardar(self.session_id)
 
     # ------------------------------- T6 verificador -------------------------------
 
@@ -395,10 +452,24 @@ class Sesion:
             return
         self._verificados.add(n)
         copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta)
+        if (tr := self._trazas.get(n)) is not None:
+            tr.pendientes.add("verificador")
         self._verificador = self._tarea(self._verificar(n, copia), "T6-verificador")
 
     async def _verificar(self, n: int, turno: verifier.Turno) -> None:
-        v = await self.verificar(turno)
+        tr = self._trazas.get(n)
+        t0 = ahora()
+        try:
+            v = await self.verificar(turno)
+            if tr is not None:
+                estado = v.estado if v else "sin veredicto"
+                tr.etapa("verificador", (ahora() - t0) * 1000, f"{estado}: {'; '.join(v.problemas)}"[:200]
+                         if v and v.problemas else estado)
+                tr.contexto["verificacion"] = estado
+        finally:
+            if tr is not None:
+                tr.pendientes.discard("verificador")
+                self._publicar_traza(tr)
         if v is None:
             return
         self.emitir(ev.Verification(turn_id=n, status=v.estado, issues=v.problemas, correction=v.correccion))
@@ -436,6 +507,8 @@ class Sesion:
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status=r.status, ms=r.ms,
                                     summary=tools_registry.resumen(r.texto)))
             self._turno(turno).tools.append(verifier.ResultadoTool(nombre, args, r.texto))
+            if (tr := self._trazas.get(turno)) is not None:
+                tr.tool(nombre, r.ms, args, r.texto, r.status + (" (caché)" if r.cache else ""))
             if self.agente is not None:
                 await self.agente.enviar({"type": "FunctionCallResponse", "id": fid, "name": nombre,
                                           "content": r.texto})

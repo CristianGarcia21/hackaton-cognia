@@ -667,3 +667,48 @@ def test_una_interrupcion_cancela_la_verificacion(monkeypatch):
 
     ws, agente, _ = correr(con_sesion(prueba))
     assert not ws.de_tipo(ev.Verification) and "InjectAgentMessage" not in agente.tipos_enviados()
+
+
+# ------------------------------- traza (#19) -------------------------------
+
+from server.cognition import trace as TR  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _trazas_en_tmp(monkeypatch, tmp_path):
+    monkeypatch.setattr(TR, "DIR_TRAZAS", tmp_path / "trazas")
+    return tmp_path / "trazas"
+
+
+def test_traza_del_turno_con_spans_contexto_y_jsonl(monkeypatch, _trazas_en_tmp):
+    async def respaldado(turno):
+        return VER.Veredicto(estado="respaldado")
+    monkeypatch.setattr(S.verifier, "verificar", respaldado)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "¿hospitales en Medellín?"})
+        await esperar(lambda: ws.de_tipo(ev.Trace) and ws.de_tipo(ev.Verification))
+        agente.empujar({"type": "LatencyReport", "stt_latency": 0.2})  # de otro momento: no cambia la traza
+        await esperar(lambda: list(_trazas_en_tmp.glob("*.jsonl")))
+
+    ws, _, _ = correr(con_sesion(prueba))
+    final = ws.de_tipo(ev.Trace)[-1]
+    etapas = [s.stage for s in final.spans]
+    assert final.turn_id == 1 and "tool:buscar_ips" in etapas and "verificador" in etapas and "emocion" in etapas
+    tool = next(s for s in final.spans if s.stage == "tool:buscar_ips")
+    assert "municipio=Medellín" in tool.detail and "caracteres" in tool.detail
+    assert final.context["pregunta"] == "¿hospitales en Medellín?" and final.context["tools"] == ["buscar_ips"]
+    assert final.context["verificacion"] == "respaldado" and final.context["adaptacion_vigente"] == "normal"
+    lineas = (_trazas_en_tmp / "s1.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lineas) == 1 and json.loads(lineas[0])["turn_id"] == 1
+
+
+def test_spans_de_tiempos_de_deepgram_y_del_backend():
+    t = TR.Traza(3)
+    t.latencias = {"stt_latency": 0.25, "ttt_tool_latency": 0.3}
+    t.fin_usuario = 10.0
+    t.tool("buscar_ips", 120, {"municipio": "Cali"}, "x" * 50, "ok")
+    t.ultima_tool, t.primer_texto, t.primer_audio = 10.5, 10.9, 11.2
+    spans = {s.stage: s.ms for s in t.spans()}
+    assert spans == {"fin_turno": 250, "llm_decide": 300, "tool:buscar_ips": 120, "llm_redacta": 400,
+                     "primer_audio": 1200}
