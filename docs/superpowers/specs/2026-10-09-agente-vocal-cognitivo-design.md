@@ -208,23 +208,27 @@ pensando / consultando IPS… / hablando").
 | `ready` | `session_id`, `voice`, `sources` | Habilitar el micrófono |
 | `state` | `state`, `turn_id` | Indicador de estado |
 | `audio_flush` | `turn_id` | Vaciar el búfer de reproducción (interrupción) |
-| `transcript` | `turn_id`, `speaker` ("Hablante 1"…/"Agente"), `text`, `start`, `end`, `is_final` | Panel de transcripción |
+| `transcript` | `segment_id`, `turn_id?`, `speaker` ("Hablante 1"…/"Agente"), `text`, `start?`, `end?`, `is_final` | Panel de transcripción (los parciales y el final comparten `segment_id`) |
 | `agent_text` | `turn_id`, `text` | Texto de lo que dice el agente |
-| `emotion` | `turn_id`, `speaker`, `sentiment` (−1..1), `emotion`, `intensity` (0..1), `signals[]` | Panel de emociones |
-| `adaptation` | `active` (bool), `style`, `speed`, `reason`, `rule` | Indicador de adaptación |
+| `emotion` | `turn_id?`, `speaker`, `sentiment` (−1..1), `emotion`, `intensity` (0..1), `signals[]` | Panel de emociones |
+| `adaptation` | `active` (derivado: `rule != normal`), `style`, `speed`, `reason`, `rule` | Indicador de adaptación |
 | `verification` | `turn_id`, `status` (respaldado / parcial / no_respaldado / fuera_de_datos_ok), `issues[]`, `correction?` | Marca ✔/⚠ en la respuesta |
 | `tool` | `turn_id`, `name`, `args`, `status` (running/ok/error/timeout/cancelled), `ms`, `summary` | Inspector y acciones |
 | `action` | `kind` (cita/evento/excel), `data`, `link?` | Panel de acciones |
 | `trace` | `turn_id`, `spans[]` (`stage`, `ms`, `detail`), `context` | Inspector (cascada de tiempos) |
 | `brief` | `summary`, `key_points[]`, `questions[]` (3 a 5), `stats` | Panel del brief |
-| `source_status` | `source`, `status`, `rows`, `pages`, `progress` | Animación de carga (P2) |
+| `source_status` | `source`, `status`, `rows` (acumulado), `total_rows?`, `pages`, `progress` | Animación de carga (P2) |
 | `lesson` | `kind`, `content`, `origin` | Panel de lecciones |
 | `error` | `where`, `message`, `recoverable` | Aviso visible y no bloqueante |
 
 **HTTP:** `GET /` (frontend) · `GET /api/health` · `GET /api/brief` · `POST /api/fuentes` (subir
 Excel/CSV) · `GET /api/citas/excel` (descarga) · `GET /api/calendario.ics`.
 
-`server/events.py` define cada evento como un modelo Pydantic. Es la **fuente de verdad** del contrato.
+`server/events.py` define cada evento como un modelo Pydantic. Es la **fuente de verdad** del contrato
+(si esta tabla y el código difieren, manda el código). El frontend lo consume desde `web/contrato.json`
+(esquemas, enums y ejemplos), regenerado con `uv run python -m server.events --exportar`. Los valores que
+vienen de LLMs o relojes se normalizan/recortan en vez de rechazarse; los mensajes inválidos del cliente se
+responden con `error` recuperable sin cerrar la conexión. `?` = opcional (no se envía si no hay valor).
 
 ## 7. Datos: IPS de datos.gov.co
 

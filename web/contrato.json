@@ -1,0 +1,1400 @@
+{
+  "audio": {
+    "entrada": {
+      "encoding": "linear16",
+      "sample_rate": 16000,
+      "channels": 1
+    },
+    "salida": {
+      "encoding": "linear16",
+      "sample_rate": 24000,
+      "channels": 1
+    }
+  },
+  "estados": [
+    "inactivo",
+    "escuchando",
+    "pensando",
+    "ejecutando_tool",
+    "hablando",
+    "interrumpido"
+  ],
+  "emociones": [
+    "alegria",
+    "calma",
+    "neutral",
+    "confusion",
+    "ansiedad",
+    "frustracion",
+    "enojo",
+    "tristeza",
+    "urgencia"
+  ],
+  "reglas_adaptacion": [
+    "urgencia",
+    "frustracion",
+    "ansiedad",
+    "confusion",
+    "normal"
+  ],
+  "estados_verificacion": [
+    "respaldado",
+    "parcial",
+    "no_respaldado",
+    "fuera_de_datos_ok"
+  ],
+  "ejemplos": {
+    "cliente": {
+      "start": [
+        {
+          "type": "start"
+        }
+      ],
+      "stop": [
+        {
+          "type": "stop"
+        }
+      ],
+      "text_input": [
+        {
+          "type": "text_input",
+          "text": "¿Qué IPS tienen sala de cirugía en Medellín?"
+        }
+      ]
+    },
+    "servidor": {
+      "ready": [
+        {
+          "type": "ready",
+          "session_id": "a1b2c3",
+          "voice": "aura-2-celeste-es",
+          "sources": [
+            "ips",
+            "citas",
+            "excel",
+            "calendario"
+          ]
+        }
+      ],
+      "state": [
+        {
+          "type": "state",
+          "state": "pensando",
+          "turn_id": 4
+        },
+        {
+          "type": "state",
+          "state": "inactivo"
+        }
+      ],
+      "audio_flush": [
+        {
+          "type": "audio_flush",
+          "turn_id": 4
+        }
+      ],
+      "transcript": [
+        {
+          "type": "transcript",
+          "segment_id": "h-12",
+          "turn_id": 4,
+          "speaker": "Hablante 1",
+          "text": "Necesito una cita para una cirugía en Medellín",
+          "start": 42.1,
+          "end": 45.3,
+          "is_final": true
+        },
+        {
+          "type": "transcript",
+          "segment_id": "a-4",
+          "turn_id": 4,
+          "speaker": "Agente",
+          "text": "Encontré cinco IPS en Medellín con sala de cirugía.",
+          "is_final": true
+        }
+      ],
+      "agent_text": [
+        {
+          "type": "agent_text",
+          "turn_id": 4,
+          "text": "Encontré cinco IPS en Medellín con sala de cirugía."
+        }
+      ],
+      "emotion": [
+        {
+          "type": "emotion",
+          "turn_id": 4,
+          "speaker": "Hablante 1",
+          "sentiment": -0.3,
+          "emotion": "ansiedad",
+          "intensity": 0.6,
+          "signals": [
+            "cirugía",
+            "urgente"
+          ]
+        }
+      ],
+      "adaptation": [
+        {
+          "type": "adaptation",
+          "active": true,
+          "rule": "ansiedad",
+          "style": "Cálido y tranquilizador",
+          "speed": 0.9,
+          "reason": "ansiedad detectada (sentimiento -0.3)"
+        }
+      ],
+      "verification": [
+        {
+          "type": "verification",
+          "turn_id": 4,
+          "status": "respaldado",
+          "issues": []
+        },
+        {
+          "type": "verification",
+          "turn_id": 5,
+          "status": "no_respaldado",
+          "issues": [
+            "La cifra 120 no aparece en el resultado de la tool"
+          ],
+          "correction": "Según los datos son 112 camas."
+        }
+      ],
+      "tool": [
+        {
+          "type": "tool",
+          "turn_id": 4,
+          "name": "buscar_ips",
+          "args": {
+            "municipio": "Medellín",
+            "capacidad": "Sala de Cirugía"
+          },
+          "status": "running"
+        },
+        {
+          "type": "tool",
+          "turn_id": 4,
+          "name": "buscar_ips",
+          "args": {
+            "municipio": "Medellín",
+            "capacidad": "Sala de Cirugía"
+          },
+          "status": "ok",
+          "ms": 12,
+          "summary": "5 sedes encontradas"
+        }
+      ],
+      "action": [
+        {
+          "type": "action",
+          "kind": "cita",
+          "data": {
+            "id": 7,
+            "paciente": "María",
+            "sede": "Hospital X",
+            "estado": "pendiente de confirmación por la IPS"
+          }
+        },
+        {
+          "type": "action",
+          "kind": "excel",
+          "data": {
+            "filas": 3
+          },
+          "link": "/api/citas/excel"
+        }
+      ],
+      "trace": [
+        {
+          "type": "trace",
+          "turn_id": 4,
+          "spans": [
+            {
+              "stage": "fin_turno",
+              "ms": 380
+            },
+            {
+              "stage": "llm_decide",
+              "ms": 190
+            },
+            {
+              "stage": "tool:buscar_ips",
+              "ms": 12,
+              "detail": "municipio=Medellín · 5 filas"
+            },
+            {
+              "stage": "llm_redacta",
+              "ms": 210
+            },
+            {
+              "stage": "primer_audio",
+              "ms": 240
+            }
+          ],
+          "context": {
+            "adaptacion": "ansiedad",
+            "lecciones": 2,
+            "tools": [
+              "buscar_ips"
+            ]
+          }
+        }
+      ],
+      "brief": [
+        {
+          "type": "brief",
+          "summary": "Registro de 10 921 sedes de IPS de Colombia con su capacidad instalada (corte nov. 2022).",
+          "key_points": [
+            "41 427 registros de capacidad",
+            "Nivel de atención sin dato en el 61 %"
+          ],
+          "questions": [
+            "¿Cuántas camas de UCI hay en Antioquia?",
+            "¿Qué IPS públicas tienen quirófano en Cali?",
+            "¿Cómo se distribuyen las ambulancias por departamento?"
+          ],
+          "stats": {
+            "filas": 41427,
+            "sedes": 10921,
+            "prestadores": 9320
+          }
+        }
+      ],
+      "source_status": [
+        {
+          "type": "source_status",
+          "source": "datos.gov.co",
+          "status": "descargando",
+          "rows": 21000,
+          "total_rows": 41427,
+          "pages": 21,
+          "progress": 0.5
+        }
+      ],
+      "lesson": [
+        {
+          "type": "lesson",
+          "kind": "keyterm",
+          "content": "Zipaquirá",
+          "origin": "corrección del usuario"
+        }
+      ],
+      "error": [
+        {
+          "type": "error",
+          "where": "groq",
+          "message": "Límite de uso; cambiando de modelo",
+          "recoverable": true
+        }
+      ]
+    }
+  },
+  "schema": {
+    "cliente": {
+      "$defs": {
+        "Start": {
+          "additionalProperties": false,
+          "description": "Empieza a capturar el micrófono; desde aquí llegan frames binarios de audio.",
+          "examples": [
+            {
+              "type": "start"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "start",
+              "default": "start",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "title": "Start",
+          "type": "object"
+        },
+        "Stop": {
+          "additionalProperties": false,
+          "description": "Deja de capturar el micrófono.",
+          "examples": [
+            {
+              "type": "stop"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "stop",
+              "default": "stop",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "title": "Stop",
+          "type": "object"
+        },
+        "TextInput": {
+          "additionalProperties": false,
+          "description": "Respaldo por texto o pregunta sugerida pulsada: se procesa como si el usuario la hubiera dicho.\nSe quitan los espacios de los extremos y se recorta a 2000 caracteres; vacío → inválido.",
+          "examples": [
+            {
+              "text": "¿Qué IPS tienen sala de cirugía en Medellín?",
+              "type": "text_input"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "text_input",
+              "default": "text_input",
+              "title": "Type",
+              "type": "string"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "TextInput",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "start": "#/$defs/Start",
+          "stop": "#/$defs/Stop",
+          "text_input": "#/$defs/TextInput"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Start"
+        },
+        {
+          "$ref": "#/$defs/Stop"
+        },
+        {
+          "$ref": "#/$defs/TextInput"
+        }
+      ]
+    },
+    "servidor": {
+      "$defs": {
+        "Action": {
+          "additionalProperties": false,
+          "description": "Acción realizada en un sistema conectado (panel de acciones).",
+          "examples": [
+            {
+              "data": {
+                "estado": "pendiente de confirmación por la IPS",
+                "id": 7,
+                "paciente": "María",
+                "sede": "Hospital X"
+              },
+              "kind": "cita",
+              "type": "action"
+            },
+            {
+              "data": {
+                "filas": 3
+              },
+              "kind": "excel",
+              "link": "/api/citas/excel",
+              "type": "action"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "action",
+              "default": "action",
+              "title": "Type",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "cita",
+                "evento",
+                "excel"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "data": {
+              "additionalProperties": true,
+              "title": "Data",
+              "type": "object"
+            },
+            "link": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Link"
+            }
+          },
+          "required": [
+            "kind",
+            "data"
+          ],
+          "title": "Action",
+          "type": "object"
+        },
+        "Adaptation": {
+          "additionalProperties": false,
+          "description": "Regla de adaptación vigente (spec §9.3). Se emite solo cuando cambia.\nactive se DERIVA: es true si rule != \"normal\". speed se recorta a 0.7..1.5.",
+          "examples": [
+            {
+              "active": true,
+              "reason": "ansiedad detectada (sentimiento -0.3)",
+              "rule": "ansiedad",
+              "speed": 0.9,
+              "style": "Cálido y tranquilizador",
+              "type": "adaptation"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "adaptation",
+              "default": "adaptation",
+              "title": "Type",
+              "type": "string"
+            },
+            "active": {
+              "default": false,
+              "title": "Active",
+              "type": "boolean"
+            },
+            "rule": {
+              "enum": [
+                "urgencia",
+                "frustracion",
+                "ansiedad",
+                "confusion",
+                "normal"
+              ],
+              "title": "Rule",
+              "type": "string"
+            },
+            "style": {
+              "title": "Style",
+              "type": "string"
+            },
+            "speed": {
+              "title": "Speed",
+              "type": "number"
+            },
+            "reason": {
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "rule",
+            "style",
+            "speed",
+            "reason"
+          ],
+          "title": "Adaptation",
+          "type": "object"
+        },
+        "AgentText": {
+          "additionalProperties": false,
+          "description": "Texto de lo que dice (o empezó a decir) el agente en un turno.",
+          "examples": [
+            {
+              "text": "Encontré cinco IPS en Medellín con sala de cirugía.",
+              "turn_id": 4,
+              "type": "agent_text"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "agent_text",
+              "default": "agent_text",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "title": "Turn Id",
+              "type": "integer"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "turn_id",
+            "text"
+          ],
+          "title": "AgentText",
+          "type": "object"
+        },
+        "AudioFlush": {
+          "additionalProperties": false,
+          "description": "Interrupción: la UI vacía YA su búfer de reproducción. El backend ya dejó de enviar los\nframes de ese turno (los frames binarios no llevan turn_id).",
+          "examples": [
+            {
+              "turn_id": 4,
+              "type": "audio_flush"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "audio_flush",
+              "default": "audio_flush",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "title": "Turn Id",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "turn_id"
+          ],
+          "title": "AudioFlush",
+          "type": "object"
+        },
+        "Brief": {
+          "additionalProperties": false,
+          "description": "Brief de la fuente de datos (spec §9.5). El objetivo son 3 a 5 preguntas: cognition/brief.py\ngarantiza al menos 3; aquí solo se recortan a 5 y se exige al menos 1.",
+          "examples": [
+            {
+              "key_points": [
+                "41 427 registros de capacidad",
+                "Nivel de atención sin dato en el 61 %"
+              ],
+              "questions": [
+                "¿Cuántas camas de UCI hay en Antioquia?",
+                "¿Qué IPS públicas tienen quirófano en Cali?",
+                "¿Cómo se distribuyen las ambulancias por departamento?"
+              ],
+              "stats": {
+                "filas": 41427,
+                "prestadores": 9320,
+                "sedes": 10921
+              },
+              "summary": "Registro de 10 921 sedes de IPS de Colombia con su capacidad instalada (corte nov. 2022).",
+              "type": "brief"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "brief",
+              "default": "brief",
+              "title": "Type",
+              "type": "string"
+            },
+            "summary": {
+              "title": "Summary",
+              "type": "string"
+            },
+            "key_points": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Key Points",
+              "type": "array"
+            },
+            "questions": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Questions",
+              "type": "array"
+            },
+            "stats": {
+              "additionalProperties": true,
+              "default": {},
+              "title": "Stats",
+              "type": "object"
+            }
+          },
+          "required": [
+            "summary",
+            "key_points",
+            "questions"
+          ],
+          "title": "Brief",
+          "type": "object"
+        },
+        "Emotion": {
+          "additionalProperties": false,
+          "description": "Sentimiento y emoción de un turno de un hablante (spec §9.2). Rangos recortados y emoción\nnormalizada (tildes, mayúsculas, sinónimos como \"miedo\" → \"ansiedad\"; desconocida → \"neutral\").",
+          "examples": [
+            {
+              "emotion": "ansiedad",
+              "intensity": 0.6,
+              "sentiment": -0.3,
+              "signals": [
+                "cirugía",
+                "urgente"
+              ],
+              "speaker": "Hablante 1",
+              "turn_id": 4,
+              "type": "emotion"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "emotion",
+              "default": "emotion",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Turn Id"
+            },
+            "speaker": {
+              "title": "Speaker",
+              "type": "string"
+            },
+            "sentiment": {
+              "title": "Sentiment",
+              "type": "number"
+            },
+            "emotion": {
+              "enum": [
+                "alegria",
+                "calma",
+                "neutral",
+                "confusion",
+                "ansiedad",
+                "frustracion",
+                "enojo",
+                "tristeza",
+                "urgencia"
+              ],
+              "title": "Emotion",
+              "type": "string"
+            },
+            "intensity": {
+              "title": "Intensity",
+              "type": "number"
+            },
+            "signals": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Signals",
+              "type": "array"
+            }
+          },
+          "required": [
+            "speaker",
+            "sentiment",
+            "emotion",
+            "intensity"
+          ],
+          "title": "Emotion",
+          "type": "object"
+        },
+        "ErrorEvento": {
+          "additionalProperties": false,
+          "description": "Error visible y no bloqueante. type = \"error\". recoverable=false → la UI ofrece reconectar.",
+          "examples": [
+            {
+              "message": "Límite de uso; cambiando de modelo",
+              "recoverable": true,
+              "type": "error",
+              "where": "groq"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "error",
+              "default": "error",
+              "title": "Type",
+              "type": "string"
+            },
+            "where": {
+              "title": "Where",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "recoverable": {
+              "title": "Recoverable",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "where",
+            "message",
+            "recoverable"
+          ],
+          "title": "ErrorEvento",
+          "type": "object"
+        },
+        "EstadoConversacion": {
+          "description": "Estados de la máquina de estados de la sesión (spec §5.4).",
+          "enum": [
+            "inactivo",
+            "escuchando",
+            "pensando",
+            "ejecutando_tool",
+            "hablando",
+            "interrumpido"
+          ],
+          "title": "EstadoConversacion",
+          "type": "string"
+        },
+        "EstadoEvento": {
+          "additionalProperties": false,
+          "description": "Cambio de estado de la conversación (indicador grande de la UI). type = \"state\".",
+          "examples": [
+            {
+              "state": "pensando",
+              "turn_id": 4,
+              "type": "state"
+            },
+            {
+              "state": "inactivo",
+              "type": "state"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "state",
+              "default": "state",
+              "title": "Type",
+              "type": "string"
+            },
+            "state": {
+              "$ref": "#/$defs/EstadoConversacion"
+            },
+            "turn_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Turn Id"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "title": "EstadoEvento",
+          "type": "object"
+        },
+        "Lesson": {
+          "additionalProperties": false,
+          "description": "Lección aprendida (spec §10.3).",
+          "examples": [
+            {
+              "content": "Zipaquirá",
+              "kind": "keyterm",
+              "origin": "corrección del usuario",
+              "type": "lesson"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "lesson",
+              "default": "lesson",
+              "title": "Type",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "keyterm",
+                "sinonimo",
+                "regla"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "content": {
+              "title": "Content",
+              "type": "string"
+            },
+            "origin": {
+              "title": "Origin",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "content",
+            "origin"
+          ],
+          "title": "Lesson",
+          "type": "object"
+        },
+        "Ready": {
+          "additionalProperties": false,
+          "description": "La sesión está lista: el navegador puede habilitar el micrófono.",
+          "examples": [
+            {
+              "session_id": "a1b2c3",
+              "sources": [
+                "ips",
+                "citas",
+                "excel",
+                "calendario"
+              ],
+              "type": "ready",
+              "voice": "aura-2-celeste-es"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "ready",
+              "default": "ready",
+              "title": "Type",
+              "type": "string"
+            },
+            "session_id": {
+              "title": "Session Id",
+              "type": "string"
+            },
+            "voice": {
+              "title": "Voice",
+              "type": "string"
+            },
+            "sources": {
+              "description": "servidores MCP / fuentes conectadas",
+              "items": {
+                "type": "string"
+              },
+              "title": "Sources",
+              "type": "array"
+            }
+          },
+          "required": [
+            "session_id",
+            "voice",
+            "sources"
+          ],
+          "title": "Ready",
+          "type": "object"
+        },
+        "SourceStatus": {
+          "additionalProperties": false,
+          "description": "Progreso de carga de una fuente (paso P2). rows y pages son ACUMULADOS; total_rows es el total\nesperado si se conoce; progress (0..1, recortado) es la fracción lista.",
+          "examples": [
+            {
+              "pages": 21,
+              "progress": 0.5,
+              "rows": 21000,
+              "source": "datos.gov.co",
+              "status": "descargando",
+              "total_rows": 41427,
+              "type": "source_status"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "source_status",
+              "default": "source_status",
+              "title": "Type",
+              "type": "string"
+            },
+            "source": {
+              "title": "Source",
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "conectando",
+                "descargando",
+                "listo",
+                "respaldo",
+                "error"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "rows": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Rows",
+              "type": "integer"
+            },
+            "total_rows": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Total Rows"
+            },
+            "pages": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Pages",
+              "type": "integer"
+            },
+            "progress": {
+              "default": 0,
+              "title": "Progress",
+              "type": "number"
+            }
+          },
+          "required": [
+            "source",
+            "status"
+          ],
+          "title": "SourceStatus",
+          "type": "object"
+        },
+        "Span": {
+          "additionalProperties": false,
+          "description": "Una etapa del turno: fin_turno, llm_decide, tool:<nombre>, llm_redacta, primer_audio, verificador,\nemocion, adaptacion. ms acepta decimales y se redondea.",
+          "properties": {
+            "stage": {
+              "title": "Stage",
+              "type": "string"
+            },
+            "ms": {
+              "title": "Ms",
+              "type": "integer"
+            },
+            "detail": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Detail"
+            }
+          },
+          "required": [
+            "stage",
+            "ms"
+          ],
+          "title": "Span",
+          "type": "object"
+        },
+        "ToolCall": {
+          "additionalProperties": false,
+          "description": "Llamada a una tool (para el Inspector). Se emite al iniciar (running) y al terminar.\nms acepta decimales y se redondea.",
+          "examples": [
+            {
+              "args": {
+                "capacidad": "Sala de Cirugía",
+                "municipio": "Medellín"
+              },
+              "name": "buscar_ips",
+              "status": "running",
+              "turn_id": 4,
+              "type": "tool"
+            },
+            {
+              "args": {
+                "capacidad": "Sala de Cirugía",
+                "municipio": "Medellín"
+              },
+              "ms": 12,
+              "name": "buscar_ips",
+              "status": "ok",
+              "summary": "5 sedes encontradas",
+              "turn_id": 4,
+              "type": "tool"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "tool",
+              "default": "tool",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "title": "Turn Id",
+              "type": "integer"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "args": {
+              "additionalProperties": true,
+              "default": {},
+              "title": "Args",
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "running",
+                "ok",
+                "error",
+                "timeout",
+                "cancelled"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "ms": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ms"
+            },
+            "summary": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Summary"
+            }
+          },
+          "required": [
+            "turn_id",
+            "name",
+            "status"
+          ],
+          "title": "ToolCall",
+          "type": "object"
+        },
+        "Trace": {
+          "additionalProperties": false,
+          "description": "Traza de un turno: cascada de tiempos y contexto usado (spec §11.1).",
+          "examples": [
+            {
+              "context": {
+                "adaptacion": "ansiedad",
+                "lecciones": 2,
+                "tools": [
+                  "buscar_ips"
+                ]
+              },
+              "spans": [
+                {
+                  "ms": 380,
+                  "stage": "fin_turno"
+                },
+                {
+                  "ms": 190,
+                  "stage": "llm_decide"
+                },
+                {
+                  "detail": "municipio=Medellín · 5 filas",
+                  "ms": 12,
+                  "stage": "tool:buscar_ips"
+                },
+                {
+                  "ms": 210,
+                  "stage": "llm_redacta"
+                },
+                {
+                  "ms": 240,
+                  "stage": "primer_audio"
+                }
+              ],
+              "turn_id": 4,
+              "type": "trace"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "trace",
+              "default": "trace",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "title": "Turn Id",
+              "type": "integer"
+            },
+            "spans": {
+              "items": {
+                "$ref": "#/$defs/Span"
+              },
+              "title": "Spans",
+              "type": "array"
+            },
+            "context": {
+              "additionalProperties": true,
+              "default": {},
+              "title": "Context",
+              "type": "object"
+            }
+          },
+          "required": [
+            "turn_id",
+            "spans"
+          ],
+          "title": "Trace",
+          "type": "object"
+        },
+        "Transcript": {
+          "additionalProperties": false,
+          "description": "Transcripción diarizada. Parciales y final de un segmento comparten segment_id: la UI reemplaza\nla burbuja con ese id. start/end en segundos desde el inicio de la sesión; pueden faltar (p. ej. en\nel texto del Agente) y entonces la UI usa la hora de llegada.",
+          "examples": [
+            {
+              "end": 45.3,
+              "is_final": true,
+              "segment_id": "h-12",
+              "speaker": "Hablante 1",
+              "start": 42.1,
+              "text": "Necesito una cita para una cirugía en Medellín",
+              "turn_id": 4,
+              "type": "transcript"
+            },
+            {
+              "is_final": true,
+              "segment_id": "a-4",
+              "speaker": "Agente",
+              "text": "Encontré cinco IPS en Medellín con sala de cirugía.",
+              "turn_id": 4,
+              "type": "transcript"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "transcript",
+              "default": "transcript",
+              "title": "Type",
+              "type": "string"
+            },
+            "segment_id": {
+              "title": "Segment Id",
+              "type": "string"
+            },
+            "turn_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Turn Id"
+            },
+            "speaker": {
+              "description": "\"Hablante N\" o \"Agente\"",
+              "title": "Speaker",
+              "type": "string"
+            },
+            "text": {
+              "title": "Text",
+              "type": "string"
+            },
+            "start": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start"
+            },
+            "end": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End"
+            },
+            "is_final": {
+              "title": "Is Final",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "segment_id",
+            "speaker",
+            "text",
+            "is_final"
+          ],
+          "title": "Transcript",
+          "type": "object"
+        },
+        "Verification": {
+          "additionalProperties": false,
+          "description": "Veredicto del verificador QA sobre la respuesta de un turno (spec §9.4).\nstatus normalizado; un valor desconocido se trata como \"parcial\".",
+          "examples": [
+            {
+              "issues": [],
+              "status": "respaldado",
+              "turn_id": 4,
+              "type": "verification"
+            },
+            {
+              "correction": "Según los datos son 112 camas.",
+              "issues": [
+                "La cifra 120 no aparece en el resultado de la tool"
+              ],
+              "status": "no_respaldado",
+              "turn_id": 5,
+              "type": "verification"
+            }
+          ],
+          "properties": {
+            "type": {
+              "const": "verification",
+              "default": "verification",
+              "title": "Type",
+              "type": "string"
+            },
+            "turn_id": {
+              "title": "Turn Id",
+              "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "respaldado",
+                "parcial",
+                "no_respaldado",
+                "fuera_de_datos_ok"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "issues": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Issues",
+              "type": "array"
+            },
+            "correction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Correction"
+            }
+          },
+          "required": [
+            "turn_id",
+            "status"
+          ],
+          "title": "Verification",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "action": "#/$defs/Action",
+          "adaptation": "#/$defs/Adaptation",
+          "agent_text": "#/$defs/AgentText",
+          "audio_flush": "#/$defs/AudioFlush",
+          "brief": "#/$defs/Brief",
+          "emotion": "#/$defs/Emotion",
+          "error": "#/$defs/ErrorEvento",
+          "lesson": "#/$defs/Lesson",
+          "ready": "#/$defs/Ready",
+          "source_status": "#/$defs/SourceStatus",
+          "state": "#/$defs/EstadoEvento",
+          "tool": "#/$defs/ToolCall",
+          "trace": "#/$defs/Trace",
+          "transcript": "#/$defs/Transcript",
+          "verification": "#/$defs/Verification"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Ready"
+        },
+        {
+          "$ref": "#/$defs/EstadoEvento"
+        },
+        {
+          "$ref": "#/$defs/AudioFlush"
+        },
+        {
+          "$ref": "#/$defs/Transcript"
+        },
+        {
+          "$ref": "#/$defs/AgentText"
+        },
+        {
+          "$ref": "#/$defs/Emotion"
+        },
+        {
+          "$ref": "#/$defs/Adaptation"
+        },
+        {
+          "$ref": "#/$defs/Verification"
+        },
+        {
+          "$ref": "#/$defs/ToolCall"
+        },
+        {
+          "$ref": "#/$defs/Action"
+        },
+        {
+          "$ref": "#/$defs/Trace"
+        },
+        {
+          "$ref": "#/$defs/Brief"
+        },
+        {
+          "$ref": "#/$defs/SourceStatus"
+        },
+        {
+          "$ref": "#/$defs/Lesson"
+        },
+        {
+          "$ref": "#/$defs/ErrorEvento"
+        }
+      ]
+    }
+  }
+}
