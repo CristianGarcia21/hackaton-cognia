@@ -188,6 +188,8 @@ async def api_cita_ics(solicitud_id: int) -> Response:
 async def api_citas_excel(sede: str | None = None) -> Response:
     """Todas las IPS (una hoja por sede) o, con ?sede=<id>, solo las de esa IPS, listas para enviarle."""
     filas = await asyncio.to_thread(estado.citas.solicitudes)
+    if sede and not any(f["sede_codigo"] == sede for f in filas):
+        return JSONResponse({"error": "no hay solicitudes para esa IPS"}, status_code=404)
     contenido = await asyncio.to_thread(excel_mod.construir_excel, filas, sede)
     return Response(contenido, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{excel_mod.nombre_archivo(filas, sede)}"'})

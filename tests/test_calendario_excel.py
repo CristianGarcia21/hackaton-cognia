@@ -139,3 +139,8 @@ def test_excel_de_una_sola_ips_listo_para_enviar(citas):
 def test_nombre_de_archivo_conserva_las_letras_con_tilde():
     filas = [{"sede_codigo": "1", "sede_nombre": "Fundación Clínica Ñuñoa"}]
     assert X.nombre_archivo(filas, "1") == "solicitudes-fundacion-clinica-nunoa.xlsx"
+
+
+@pytest.mark.parametrize("sede", ['"', "漢", "\r\n"])
+def test_nombre_de_archivo_nunca_usa_el_parametro_crudo(sede):
+    assert X.nombre_archivo([], sede) == "solicitudes-ips.xlsx"

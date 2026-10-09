@@ -310,3 +310,8 @@ def test_excel_por_ips_y_estado_de_calendario_en_la_api(client):
     r = client.get(g["excel"])
     assert r.status_code == 200 and ".xlsx" in r.headers["content-disposition"]
     assert "solicitudes-por-ips" not in r.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("sede", ['"', "%E6%BC%A2", "%0D%0A", "no-existe"])
+def test_excel_de_sede_rara_o_inexistente_es_404_y_no_500(client, sede):
+    assert client.get(f"/api/citas/excel?sede={sede}").status_code == 404

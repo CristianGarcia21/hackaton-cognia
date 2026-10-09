@@ -60,7 +60,7 @@ def nombre_archivo(filas: list[dict], sede: str | None) -> str:
     nombre = next((f["sede_nombre"] for f in filas if f["sede_codigo"] == sede and f.get("sede_nombre")), sede)
     sin_tildes = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()  # "Fundación" → "Fundacion"
     limpio = re.sub(r"[^A-Za-z0-9]+", "-", sin_tildes).strip("-").lower()
-    return f"solicitudes-{limpio or sede}.xlsx"
+    return f"solicitudes-{limpio or 'ips'}.xlsx"  # nunca el parámetro crudo: va en una cabecera HTTP
 
 
 def construir_excel(filas: list[dict], sede: str | None = None) -> bytes:
