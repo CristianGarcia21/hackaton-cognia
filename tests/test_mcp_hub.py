@@ -248,7 +248,10 @@ def test_funciones_agente_tienen_el_formato_de_deepgram():
     nombres = [f["name"] for f in funciones]
     assert {"describir_datos", "buscar_ips", "contar_capacidad", "detalle_ips"} <= set(nombres)
     for f in funciones:
-        assert set(f) == {"name", "description", "parameters"}  # sin endpoint ni defer: lecturas del backend
+        assert {"name", "description", "parameters"} <= set(f) <= {"name", "description", "parameters",
+                                                                   "defer_until_eot"}  # sin endpoint
+        if f["name"] in {"describir_datos", "buscar_ips", "contar_capacidad", "detalle_ips"}:
+            assert "defer_until_eot" not in f  # lecturas: se piden especulativamente (menos latencia)
         assert f["parameters"]["type"] == "object"
         assert "title" not in json.dumps(f["parameters"])  # sin ruido que cuesta tokens
     json.dumps(funciones)  # serializable para el mensaje Settings
