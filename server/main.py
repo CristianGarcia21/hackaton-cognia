@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 
 from fastapi import FastAPI, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from server import config
@@ -32,6 +32,8 @@ from server.deepgram_agent import ConexionAgente, settings
 from server.deepgram_stt import ConexionSTT
 from server.mcp_hub import HubMCP
 from server.session import Sesion
+from server.tools import citas as citas_mod
+from server.tools.citas import HerramientasCitas
 from server.tools.ips import HerramientasIPS
 
 log = logging.getLogger("cognia.server")
@@ -53,6 +55,7 @@ class Estado:
     ips: HerramientasIPS | None = None  # tools de IPS: reciben el catálogo cuando termina de cargar
     hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
     lecciones: Lecciones = field(default_factory=Lecciones)  # memoria entre sesiones (#23)
+    citas: HerramientasCitas = field(default_factory=HerramientasCitas)  # solicitudes (SQLite) para /citas
     conexiones: set[Sesion] = field(default_factory=set)  # sesiones abiertas (para difundir eventos)
     brief: ev.Brief | None = None  # caché: se calcula una vez al arrancar y se envía a cada sesión (#12)
     saludo: str | None = None  # versión hablada del brief para el greeting del Voice Agent
@@ -119,7 +122,9 @@ async def lifespan(_app: FastAPI):
     try:
         estado.ips = HerramientasIPS(estado.datos, estado.catalogo)
         estado.hub = HubMCP()
-        tools_registry.registrar_servidores(estado.hub, estado.ips)
+        if config.SEMILLAS and (n := await asyncio.to_thread(estado.citas.sembrar)):
+            log.info("Cargadas %d solicitudes de ejemplo (data/semillas/citas.json)", n)
+        tools_registry.registrar_servidores(estado.hub, estado.ips, estado.citas)
         await estado.hub.iniciar()
         yield
     finally:
@@ -148,6 +153,28 @@ def health() -> dict:
     return {"status": "ok" if all(c.values()) else "degradado", "componentes": c}
 
 
+@app.get("/citas", include_in_schema=False)
+def pagina_citas() -> FileResponse:
+    return FileResponse(config.WEB_DIR / "citas" / "index.html")
+
+
+@app.get("/api/citas")
+async def api_citas() -> JSONResponse:
+    """Solicitudes agrupadas por IPS, sin documento ni teléfono (la URL es pública)."""
+    filas = await asyncio.to_thread(estado.citas.solicitudes)
+    return JSONResponse(citas_mod.vista_publica(filas))
+
+
+@app.get("/api/citas/{solicitud_id}.ics")
+async def api_cita_ics(solicitud_id: int) -> Response:
+    s = await asyncio.to_thread(estado.citas.solicitud, solicitud_id)
+    contenido = citas_mod.ics(s) if s else None
+    if contenido is None:
+        return JSONResponse({"error": "solicitud sin fecha u hora, o inexistente"}, status_code=404)
+    return Response(contenido, media_type="text/calendar; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="solicitud-{solicitud_id}.ics"'})
+
+
 @app.get("/api/brief")
 def brief() -> JSONResponse:
     if estado.brief is None:
@@ -170,7 +197,8 @@ async def _abrir_agente(funciones: list[dict], historial: list[dict] | None = No
     extra = {"saludo": estado.saludo} if estado.saludo else {}  # saludo del brief (#12); sin brief, el de por defecto
     return await ConexionAgente.abrir(config.DEEPGRAM_API_KEY, settings(
         funciones, groq_key=config.GROQ_API_KEY, groq_key_2=config.GROQ_API_KEY_2, modelo=config.VOICE_LLM,
-        voz=config.VOZ, historial=historial, prompt=deepgram_agent.PROMPT + estado.lecciones.para_prompt(),
+        voz=config.VOZ, historial=historial,
+        prompt=deepgram_agent.PROMPT + deepgram_agent.hoy() + estado.lecciones.para_prompt(),
         keyterms=deepgram_agent.KEYTERMS + estado.lecciones.keyterms(), **extra))
 
 

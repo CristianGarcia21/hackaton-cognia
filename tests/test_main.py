@@ -62,7 +62,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
     monkeypatch.setattr(main.brief_fuente, "generar", _brief_falso)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
     componentes.clear()
     with TestClient(app) as c:
         _esperar_listo(c)
@@ -179,7 +179,7 @@ def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", falla)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.05)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.3)
@@ -199,7 +199,7 @@ def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch, tmp_pat
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", bug)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.02)
     from server.cognition.lessons import Lecciones
-    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db"), citas=__import__("server.tools.citas", fromlist=["x"]).HerramientasCitas(tmp_path / "citas.db")))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.2)
@@ -281,3 +281,15 @@ def test_el_saludo_del_brief_va_al_greeting_del_agente(client, monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(ABRIR_AGENTE_REAL([]))
     assert capturado["agent"]["greeting"] == "Hola, soy Kognia. Te ayudo con las IPS de Colombia."
+
+
+# ------------------------------- /citas -------------------------------
+
+def test_pagina_y_api_de_citas(client):
+    assert client.get("/citas").status_code == 200 and "Solicitudes de cita" in client.get("/citas").text
+    datos = client.get("/api/citas").json()
+    assert datos["total"] == 3 and datos["grupos"]  # semillas de demo
+    s = datos["grupos"][0]["solicitudes"][0]
+    r = client.get(s["ics"])
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/calendar")
+    assert client.get("/api/citas/99999.ics").status_code == 404

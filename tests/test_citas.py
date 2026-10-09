@@ -36,7 +36,7 @@ def test_registrar_devuelve_id_y_estado_honesto(citas):
 def test_la_base_se_crea_en_el_primer_uso_y_no_al_instanciar(tmp_path):
     ruta = tmp_path / "nueva" / "citas.db"
     h = C.HerramientasCitas(ruta)
-    assert [t.name for t in h.tools()] == ["registrar_solicitud_cita", "listar_solicitudes"]
+    assert [t.name for t in h.tools()] == ["registrar_solicitud_cita", "listar_solicitudes", "horarios_ocupados"]
     assert not ruta.exists()
     correr(h.listar_solicitudes())
     assert ruta.exists()
@@ -148,3 +148,83 @@ def test_el_registro_del_agente_incluye_citas_sin_cache(citas):
     nombres, a, b = correr(prueba())
     assert {"registrar_solicitud_cita", "listar_solicitudes", "buscar_ips"} <= nombres
     assert not a.cache and not b.cache and "ya estaba registrada" in b.texto
+
+
+# ------------------------------- agenda por franjas y /citas -------------------------------
+
+from datetime import date, datetime, timedelta  # noqa: E402
+
+
+def manana_a(hora: str) -> str:
+    d = date.today() + timedelta(days=1)
+    if d.weekday() == 6:
+        d += timedelta(days=1)
+    return f"{d.isoformat()}T{hora}"
+
+
+SEDE = {"sede_codigo": "7600102870-01", "sede_nombre": "FUNDACION VALLE DEL LILI", "motivo": "cirugía"}
+
+
+def test_la_misma_franja_en_la_misma_sede_esta_ocupada_y_ofrece_libres(citas):
+    assert "registrada" in correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE))
+    texto = correr(citas.registrar_solicitud_cita(paciente="Luis Pérez", fecha_hora=manana_a("10:10"), **SEDE))
+    assert texto.startswith("Error:") and "10:00" in texto and "ya tiene una solicitud" in texto
+    assert "09:30" in texto and "10:30" in texto  # las libres más cercanas
+    otra_sede = correr(citas.registrar_solicitud_cita(paciente="Luis Pérez", fecha_hora=manana_a("10:00"),
+                                                      sede_codigo="500102104-01", motivo="consulta"))
+    assert "registrada" in otra_sede  # misma hora en otra sede: sí se puede
+
+
+@pytest.mark.parametrize("fecha_hora,mensaje", [("ayer a las 10", "no entend"), ("2020-01-01T10:00", "ya pasó"),
+                                                ("__manana__T05:00", "entre las 7:00")])
+def test_fecha_hora_invalida_explica_como_corregir(citas, fecha_hora, mensaje):
+    fecha_hora = fecha_hora.replace("__manana__", manana_a("10:00")[:10])
+    texto = correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=fecha_hora, **SEDE))
+    assert texto.startswith("Error:") and mensaje in texto
+
+
+def test_horarios_ocupados_lista_tomadas_y_libres(citas):
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("08:00"), **SEDE))
+    texto = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10]))
+    assert "ocupadas 08:00" in texto and "07:00" in texto and "no la agenda real" in texto
+
+
+def test_vista_publica_agrupa_por_sede_y_enmascara(citas):
+    correr(citas.registrar_solicitud_cita(paciente="María Gómez Ruiz", documento="1234567", telefono="3001234567",
+                                          fecha_hora=manana_a("10:00"), **SEDE))
+    v = C.vista_publica(citas.solicitudes())
+    s = v["grupos"][0]["solicitudes"][0]
+    assert v["total"] == 1 and v["grupos"][0]["sede_nombre"] == "FUNDACION VALLE DEL LILI"
+    assert s["paciente"] == "María G." and "1234567" not in str(v) and "3001234567" not in str(v)
+    assert s["google"].startswith("https://calendar.google.com/calendar/render?action=TEMPLATE")
+    assert s["ics"] == f"/api/citas/{s['id']}.ics" and "10:00" in s["cuando"]
+
+
+def test_ics_valido_con_estado_pendiente(citas):
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE))
+    texto = C.ics(citas.solicitudes()[0])
+    assert texto.startswith("BEGIN:VCALENDAR") and "DTSTART;TZID=America/Bogota:" in texto
+    assert "pendiente de confirmación por la IPS" in texto and texto.endswith("END:VCALENDAR\r\n")
+
+
+def test_sin_fecha_hora_no_hay_calendario(citas):
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_preferida="el lunes", **SEDE))
+    s = citas.solicitudes()[0]
+    assert C.ics(s) is None and C.enlace_google(s) is None
+
+
+def test_semillas_solo_si_esta_vacia(citas):
+    assert citas.sembrar() == 3 and len(citas.solicitudes()) == 3
+    assert citas.sembrar() == 0  # ya hay datos: no se repiten
+    assert all("Paciente Demo" in s["paciente"] for s in citas.solicitudes())
+
+
+def test_base_vieja_sin_columna_fecha_hora_se_migra(tmp_path):
+    import sqlite3
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(ruta)
+    con.execute(C.ESQUEMA.replace(",\n    fecha_hora TEXT", ""))
+    con.commit()
+    con.close()
+    h = C.HerramientasCitas(ruta)
+    assert "registrada" in correr(h.registrar_solicitud_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE))

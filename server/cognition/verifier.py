@@ -11,6 +11,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -24,9 +25,10 @@ TIMEOUT_S = 8.0
 MAX_RESULTADO = 2500  # caracteres por resultado de tool que ve el verificador
 
 _DIGITO = re.compile(r"\d")
+DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 SISTEMA = """Eres un verificador de hechos de un asistente de salud por voz. Comparas la RESPUESTA del asistente con los RESULTADOS DE TOOLS (consultas a datos.gov.co, la única fuente válida).
-HECHOS DEL SISTEMA (válidos aunque no aparezcan en los resultados; el asistente los conoce por su prompt): el registro es el REPS de IPS de datos.gov.co con corte del 5 de noviembre de 2022; no incluye horarios, especialistas, precios, EPS ni disponibilidad; la línea de emergencias en Colombia es el 123; las citas quedan como solicitud pendiente de confirmación por la IPS.
+HECHOS DEL SISTEMA (válidos aunque no aparezcan en los resultados; el asistente los conoce por su prompt): el registro es el REPS de IPS de datos.gov.co con corte del 5 de noviembre de 2022; no incluye horarios, especialistas, precios, EPS ni disponibilidad; la línea de emergencias en Colombia es el 123; las citas quedan como solicitud pendiente de confirmación por la IPS. También son válidos los datos que dio el propio USUARIO en la conversación (su nombre, el motivo, el día y la hora que pidió): repetirlos o preguntar por ellos no es un dato no respaldado.
 Reglas:
 - Cada cifra, nombre de IPS, dirección, teléfono, municipio o atributo que afirme la respuesta debe aparecer en los resultados (los números pueden estar escritos en palabras: "veintitrés" = 23). Redondeos razonables están bien.
 - "respaldado": todo lo afirmado está en los resultados.
@@ -50,6 +52,7 @@ class Turno:
     tools: list[ResultadoTool] = field(default_factory=list)
     respuesta: str = ""
     previas: list[ResultadoTool] = field(default_factory=list)  # tools de turnos anteriores (también son datos)
+    dicho_antes: list[str] = field(default_factory=list)  # lo que dijo el usuario en turnos anteriores
 
 
 class Veredicto(BaseModel):
@@ -90,7 +93,11 @@ def _json_tools(tools: list[ResultadoTool]) -> str:
 def _contexto(turno: Turno) -> str:
     previas = (f"RESULTADOS DE TOOLS DE TURNOS ANTERIORES (también son datos de datos.gov.co válidos):\n"
                f"{_json_tools(turno.previas)}\n\n" if turno.previas else "")
-    return (f"PREGUNTA DEL USUARIO:\n{turno.pregunta or '(sin texto)'}\n\n"
+    hoy = date.today()
+    fecha_hoy = f"FECHA DE HOY: {hoy.isoformat()} ({DIAS_SEMANA[hoy.weekday()]}).\n\n"
+    antes = ("LO QUE DIJO EL USUARIO ANTES:\n" + "\n".join(f"- {d}" for d in turno.dicho_antes) + "\n\n"
+             if turno.dicho_antes else "")
+    return (f"{fecha_hoy}{antes}PREGUNTA DEL USUARIO:\n{turno.pregunta or '(sin texto)'}\n\n"
             f"RESULTADOS DE TOOLS DE ESTE TURNO:\n{_json_tools(turno.tools)}\n\n{previas}"
             f"RESPUESTA DEL ASISTENTE:\n{turno.respuesta}")
 

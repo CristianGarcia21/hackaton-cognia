@@ -506,7 +506,8 @@ class Sesion:
             return
         self._verificados.add(n)
         previas = [r for k in sorted(self._turnos) if n - 3 <= k < n for r in self._turnos[k].tools]
-        copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta, previas)
+        dicho = [self._turnos[k].pregunta for k in sorted(self._turnos) if n - 3 <= k < n and self._turnos[k].pregunta]
+        copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta, previas, dicho)
         if (tr := self._trazas.get(n)) is not None:
             tr.pendientes.add("verificador")
         self._verificador = self._tarea(self._verificar(n, copia), "T6-verificador")
@@ -583,6 +584,8 @@ class Sesion:
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status=r.status, ms=r.ms,
                                     summary=tools_registry.resumen(r.texto)))
             self._turno(turno).tools.append(verifier.ResultadoTool(nombre, args, r.texto))
+            if nombre == "registrar_solicitud_cita" and r.status == "ok":
+                self.emitir(ev.Action(kind="cita", data={"resumen": tools_registry.resumen(r.texto)}, link="/citas"))
             if (tr := self._trazas.get(turno)) is not None:
                 tr.tool(nombre, r.ms, args, r.texto, r.status + (" (caché)" if r.cache else ""))
             if self.agente is not None:

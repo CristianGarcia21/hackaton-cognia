@@ -27,4 +27,5 @@ DATOS_GOV_AUTH: tuple[str, str] | None = (_kid, _ksecret) if _kid and _ksecret e
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2", "")  # opcional: 2.ª cuenta de Groq en la cadena de respaldo
+SEMILLAS = os.getenv("SEMILLAS", "1") != "0"  # solicitudes de ejemplo al arrancar si la base está vacía
 VOICE_LLM = os.getenv("VOICE_LLM", "openai/gpt-oss-20b")  # el único de Groq que Deepgram lista; ≈0,9 s por turno

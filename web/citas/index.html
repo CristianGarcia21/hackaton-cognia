@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kognia · Solicitudes de cita</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500&display=swap">
+  <!-- styles.css: solo se REUTILIZAN sus variables, barra y tarjetas (no se edita desde aquí). Lo de esta página
+       vive en citas.css para no chocar con el trabajo del frontend principal. -->
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/citas/citas.css">
+  <script type="module" src="/citas/citas.js"></script>
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><path d="M12 3v18M7 8v8M17 8v8M2 11v2M22 11v2" /></svg>
+      <h1>Kognia <span>· Solicitudes de cita</span></h1>
+    </div>
+    <nav class="citas-nav" aria-label="Navegación">
+      <a class="boton-secundario" href="/">← Volver al agente</a>
+      <a id="excel" class="boton-enviar citas-excel" href="/api/citas/excel" hidden>Descargar Excel</a>
+    </nav>
+  </header>
+
+  <main class="citas-main">
+    <section class="panel citas-aviso" aria-label="Qué es esta lista">
+      <p>
+        <strong>Solicitudes, no citas confirmadas.</strong> Los datos de datos.gov.co no incluyen la agenda de las IPS:
+        cada solicitud queda <em>pendiente de confirmación por la IPS</em>, agrupada por sede y lista para enviarse.
+        Los nombres se muestran abreviados; los datos de contacto completos van solo en el Excel.
+      </p>
+      <p id="resumen" class="tenue" role="status">Cargando solicitudes…</p>
+    </section>
+
+    <div id="grupos" class="citas-grupos" aria-live="polite"></div>
+  </main>
+</body>
+</html>

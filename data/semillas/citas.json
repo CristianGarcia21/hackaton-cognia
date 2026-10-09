@@ -1,0 +1,8 @@
+[
+  {"paciente": "Paciente Demo Uno", "sede_codigo": "7600102870-01", "sede_nombre": "FUNDACION VALLE DEL LILI",
+   "motivo": "valoración prequirúrgica (ejemplo)", "en_dias": 2, "hora": "10:00"},
+  {"paciente": "Paciente Demo Dos", "sede_codigo": "7600102870-01", "sede_nombre": "FUNDACION VALLE DEL LILI",
+   "motivo": "control posoperatorio (ejemplo)", "en_dias": 2, "hora": "11:00"},
+  {"paciente": "Paciente Demo Tres", "sede_codigo": "500102104-01", "sede_nombre": "HOSPITAL PABLO TOBON URIBE",
+   "motivo": "consulta externa (ejemplo)", "en_dias": 3, "hora": "09:30"}
+]
