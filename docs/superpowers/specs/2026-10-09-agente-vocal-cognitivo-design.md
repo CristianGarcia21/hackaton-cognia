@@ -60,7 +60,7 @@ publicar evalúa **fidelidad y honestidad**. Hay que confirmarlo con los organiz
 
 | Prioridad | Componente |
 |---|---|
-| **P0 imprescindible** | Voz con Deepgram Voice Agent (es) + interrupciones · STT diarizado · emociones por turno · ciclo de adaptación · dataset IPS en memoria + tools · brief · verificador QA en vivo · traza/inspector · resiliencia N1 y N2 · MCP IPS, Citas (SQLite), Excel y Calendar **local** · caja de texto de respaldo · subida de Excel/CSV · despliegue desde la primera hora · README |
+| **P0 imprescindible** | Voz con Deepgram Voice Agent (es) + interrupciones · STT diarizado · emociones por turno · ciclo de adaptación · consulta bajo demanda a datos.gov.co (cliente SODA3 + caché + catálogo de búsqueda) + tools · brief · verificador QA en vivo · traza/inspector · resiliencia N1 y N2 · MCP IPS, Citas (SQLite), Excel y Calendar **local** · caja de texto de respaldo · subida de Excel/CSV · despliegue desde la primera hora · README |
 | **P1 importante** | Agente de pruebas QA en GitHub Actions (6 casos fijos) · memoria de lecciones (resiliencia N3) |
 | **P2 si sobra tiempo** | Google Calendar real (misma interfaz MCP) |
 | **Fuera** | Login, multiusuario persistente, UI de Streamlit, embeddings/RAG vectorial, reentrenar modelos |
@@ -95,8 +95,8 @@ hacia arriba: primero P2 y luego P1.
 │  Hub MCP (clientes async, subprocesos stdio lanzados al arrancar):           │
 │   mcp_servers/ips.py · citas.py (SQLite) · excel.py · calendario.py          │
 └──────┬───────────────────────────────────────────────────────────────────────┘
-       ▼ al arrancar: descarga paginada concurrente (+ copia local de respaldo)
-   API datos.gov.co (SODA3 con token; SODA2 /resource como respaldo)
+       ▼ bajo demanda: cada tool consulta SODA3 (caché de resultados + catálogo de búsqueda)
+   API datos.gov.co (SODA3 con API key; sin archivo de respaldo)
    GitHub Actions: agente de pruebas QA → modo texto contra la URL pública → reporte
 ```
 
@@ -132,7 +132,7 @@ server/
     lessons.py         memoria de lecciones (SQLite)
     trace.py           traza por turno (spans, tiempos, contexto)
   data/
-    ips_loader.py      descarga paginada SODA3/SODA2 + copia de respaldo + índices
+    datos_gov.py       cliente SODA3 bajo demanda + caché + catálogo/resolvedor de búsqueda
 mcp_servers/
   ips.py · citas.py · excel.py · calendario.py
 web/
@@ -233,29 +233,46 @@ responden con `error` recuperable sin cerrar la conexión. `?` = opcional (no se
 ## 7. Datos: IPS de datos.gov.co
 
 ### 7.1 Hechos verificados (2026-10-09)
-- 41 427 filas · 10 921 sedes · 9 320 prestadores. **Cada fila = sede + tipo de capacidad + cantidad.**
+- 41 427 filas · 9 320 prestadores · **15 547 sedes reales**. **Cada fila = sede + tipo de capacidad +
+  cantidad.** El id de una sede es `c_digo_sede` + `n_mero_sede` (el código solo NO es único).
 - Campos: `departamento`, `municipio`, `c_digo_prestador`, `nombre_prestador`, `nit_ips`,
-  `naturaleza`, `num_nivel_atencion`, `c_digo_sede`, `nom_sede_ips`, `gerente`, `direcci_n`, `email`,
-  `tel_fono`, `nom_grupo_capacidad` (7 grupos: CONSULTORIOS, SALAS, CAMAS, AMBULANCIAS, CAMILLAS,
-  UNIDAD MOVIL, SILLAS), `nom_descripcion_capacidad` (unos 40 tipos, por ejemplo "Sala de Cirugía",
-  "Quirófano", "Intensiva Adultos"), `num_cantidad_capacidad_instalada`, `fecha_corte` (noviembre de 2022).
-- `num_nivel_atencion` está **vacío en el 61 %** de las filas. Se informa siempre como "sin dato".
+  `naturaleza`, `num_nivel_atencion`, `c_digo_sede`, `n_mero_sede`, `nom_sede_ips`, `gerente`,
+  `direcci_n`, `email`, `tel_fono`, `nom_grupo_capacidad` (7 grupos: CONSULTORIOS, SALAS, CAMAS,
+  AMBULANCIAS, CAMILLAS, UNIDAD MOVIL, SILLAS), `nom_descripcion_capacidad` (63 tipos, p. ej. "Sala de
+  Cirugía", "Quirófano", "Intensiva Adultos"), `num_cantidad_capacidad_instalada`, `fecha_corte` (nov. 2022).
+- **Calidad:** 3 145 filas son **duplicados exactos** (sobre todo ambulancias): las sumas se hacen
+  deduplicando en la propia consulta. El REPS reporta **5 distritos como "departamento"** (Barranquilla,
+  Cali, Buenaventura, Cartagena, Santa Marta): "Valle del Cauca" debe incluir Cali y Buenaventura.
+  Con eso quedan los 33 departamentos reales.
+- `num_nivel_atencion` está **vacío en el 62 %** de las filas. Se informa siempre como "sin dato".
 - **No hay** horarios, disponibilidad, especialistas ni agenda.
-- SODA2 `/resource/s2ru-bqt6.json` respondió sin token: 1 página ≈ 0,45 s; descarga completa ≈ 4 s y
-  30 MB.
 
-### 7.2 Carga (`server/data/ips_loader.py`)
-1. **SODA3** `https://www.datos.gov.co/api/v3/views/s2ru-bqt6/query.json` con token de aplicación
-   (`SODA_APP_TOKEN`), **paginado** de a 1 000 filas con hasta 8 peticiones concurrentes
-   (`httpx.AsyncClient` + semáforo). El formato exacto del cuerpo o los parámetros de SODA3 se confirma
-   en la implementación.
-2. Respaldo **SODA2** `/resource/s2ru-bqt6.json?$limit=1000&$offset=N`, también paginado.
-3. Respaldo final: **copia local comprimida** (`data/ips_snapshot.json.gz`, guardada en el repo) por si
-   la API falla al arrancar.
-4. Se emite `source_status` con el progreso (páginas y filas), que es la narrativa visible del paso P2.
-5. Se normaliza: texto sin tildes y en minúsculas para buscar, cantidades a entero y nivel vacío como
-   `None`. Se construyen índices por municipio, departamento y tipo de capacidad, y la lista de nombres
-   para la búsqueda difusa.
+### 7.2 Acceso bajo demanda (`server/data/datos_gov.py`) — NO se descarga ni se guarda el dataset
+Las tools **consultan la API cada vez que se necesita**. Nunca se lee un archivo con los datos crudos.
+
+1. **`ClienteDatosGov.consultar(soql)`**: POST a **SODA3**
+   `https://www.datos.gov.co/api/v3/views/s2ru-bqt6/query.json` con cuerpo
+   `{"query": "<SoQL>", "includeSynthetic": false, "page": {"pageNumber": 1, "pageSize": N}}` y auth
+   **Basic** con la API key (`DATOS_GOV_KEY_ID` / `DATOS_GOV_KEY_SECRET`). Conexión reutilizada
+   (keep-alive), timeout de 3 s por intento, un reintento ante 5xx/red. Si la key es rechazada sigue
+   sin auth (la API lo permite con límite de uso). Si no responde → `FuenteNoDisponible` (la tool lo
+   dice con honestidad; **no hay archivo de respaldo**). Un 400 → `ConsultaInvalida` (bug de la tool).
+2. **Caché de resultados** (clave = SoQL): TTL de 1 h (los datos tienen corte 2022 y no cambian), límite
+   de tamaño LRU y deduplicación de consultas idénticas simultáneas. Las preguntas repetidas (p. ej. las
+   sugeridas del brief) responden en ~0 ms. Latencia medida sin caché: 230–350 ms (la primera ~1 s).
+3. **Catálogo de búsqueda** (`cargar_catalogo`, al arrancar, ~0,7 s, 3 consultas en paralelo): solo
+   **valores de referencia** traídos de la API con `GROUP BY` — 1 113 pares municipio/departamento y
+   63 tipos de capacidad — más el total de registros. Sirve para saber **qué consultar**:
+   - `resolver_departamento("el Valle")` → `departamento IN ('Buenaventura','Cali','Valle del cauca')`
+   - `resolver_municipio("Medeyin")` → `MEDELLÍN` (búsqueda difusa con `rapidfuzz`, sin tildes)
+   - `resolver_capacidad("UCI pediátrica")` → los tipos intensivos pediátricos (sinónimos + modificadores)
+   - Si no hay coincidencia devuelve **sugerencias** ("¿quisiste decir…?").
+   Los nombres de IPS **no** se cachean: se buscan en vivo con `upper(nom_sede_ips) like '%…%'`.
+4. **SoQL seguro**: lo arman las tools con `texto()`/`en()` (literales escapados). **El LLM nunca
+   escribe SoQL** (decisión A: solo tools tipadas).
+5. Se emite `source_status` (`conectando` → `listo` con el total de registros, o `error`), narrativa del
+   paso P2; si la API no responde al arrancar, el servidor sigue vivo (`/api/health` "degradado") y
+   reintenta cada 15 s.
 
 ### 7.3 Por qué no usamos embeddings
 Las preguntas son de **filtrar, contar y sumar** sobre una tabla; la similitud semántica no sabe sumar.
@@ -280,7 +297,8 @@ cliente, es decir, en nuestro backend. El backend las despacha al MCP correspond
 | **calendario** | `crear_evento_cita` | `(solicitud_id, fecha_hora, duracion_min=30)` | Evento con enlace (.ics local o Google) |
 
 **Reglas de las tools:** resultados **compactos** (top 5 y campos clave), errores devueltos como texto,
-tiempo límite de **3 s** por llamada y caché en memoria por argumentos en las tools de IPS. Las tools
+tiempo límite de **3 s** por llamada; las tools de IPS consultan la API con SoQL armado por ellas (caché
+de resultados en `ClienteDatosGov`) y deduplican al sumar. Las tools
 son "gruesas": una sola llamada debe bastar para la mayoría de las preguntas, porque cada vuelta extra
 al LLM cuesta entre 200 y 400 ms.
 
@@ -299,7 +317,7 @@ vista en la UI) y **Google Calendar** con cuenta de servicio (P2). Se elige por 
 | Adaptación afectiva | Directivas agregadas con `UpdatePrompt` (sección 9.3) |
 | Lecciones | Sinónimos y reglas aprendidas (sección 10.3) |
 | Historial | Lo mantiene Deepgram durante la sesión |
-| Resultados de tools | Solo lo filtrado y compacto. **El modelo nunca ve los 41 000 registros.** |
+| Resultados de tools | Solo lo que devuelve la consulta, compacto. **El modelo nunca ve los 41 000 registros.** |
 
 El LLM del Voice Agent es Groq (`openai/gpt-oss-120b`; `gpt-oss-20b` si hace falta más velocidad).
 La configuración exacta de `think.provider` y `endpoint` para Groq se confirma en
@@ -359,7 +377,7 @@ pulsar en la UI (se envían como `text_input`).
 | Se cae el WebSocket del Voice Agent | Reconexión con espera creciente + `History` (conversación y llamadas a funciones) |
 | Se cae un servidor MCP | `mcp_hub` reinicia el subproceso; mientras tanto la tool responde "no disponible, reintento" |
 | Una tool tarda más de 3 s | Timeout → el agente lo dice y ofrece una alternativa |
-| La API de datos falla al arrancar | SODA2 → copia local |
+| La API de datos falla al arrancar | El servidor sigue vivo ("degradado") y reintenta cada 15 s; las tools dicen "datos.gov.co no responde" |
 | Falla el micrófono o la voz | Caja de texto → `InjectUserMessage`, con los mismos paneles |
 | Silencios largos | `KeepAlive` periódico |
 
@@ -421,7 +439,7 @@ permite el micrófono".
   cuando el dataset, los MCP y el brief están listos. Smoke test de cualquier URL: `uv run python scripts/smoke.py <url>`.
 - **Desplegar un "hola mundo" en la primera media hora** y luego en cada avance.
 - Variables de entorno: `DEEPGRAM_API_KEY`, `GROQ_API_KEY`, `GROQ_API_KEY_2` (opcional),
-  `GEMINI_API_KEY`, `SODA_APP_TOKEN`, `CALENDAR_BACKEND=local|google`, `GOOGLE_SERVICE_ACCOUNT_JSON`
+  `GEMINI_API_KEY`, `DATOS_GOV_KEY_ID`, `DATOS_GOV_KEY_SECRET`, `CALENDAR_BACKEND=local|google`, `GOOGLE_SERVICE_ACCOUNT_JSON`
   (P2), `PUBLIC_URL` (para QA).
 - Repo: **público**, o con acceso para los jueces (E02).
 
@@ -446,7 +464,7 @@ y a las 6:30 (congelar funcionalidades).
 | Rate limit de Groq durante la demo | Segunda key + `UpdateThink` |
 | Se acaba el crédito de Deepgram | Monitorear el panel; la demo consume centavos |
 | Micrófono o navegador del jurado | HTTPS, aviso de Chrome, respaldo por texto |
-| La API de datos.gov falla en la demo | Datos ya cargados en memoria al arrancar + copia local |
+| La API de datos.gov falla en la demo | Caché de resultados (las preguntas sugeridas se precalientan) + mensaje honesto; reintento 1× por consulta |
 | Formato exacto de los mensajes de Deepgram | Verificar contra la documentación oficial al implementar (marcado en §5.4, §9.1) |
 | No alcanza el tiempo | Cortes en el orden P2 → P1; hito a las 3:00 |
 
@@ -458,7 +476,7 @@ y a las 6:30 (congelar funcionalidades).
 | Despliegue (10 %) | §14 |
 | UX y demo (25 %) | §13, historia de María, Inspector, preguntas pulsables |
 | Fidelidad y honestidad (≈30 %) | §7.3, §9.1, §9.4, §8 (honestidad en el agendamiento) |
-| P2 fuente | `source_status` paginado + subida de Excel/CSV |
+| P2 fuente | `source_status` (conexión a la API + total de registros) + subida de Excel/CSV |
 | P3 brief | §9.5 |
 | P4 resumen / detalle / fuera de datos | `contar_capacidad` / `detalle_ips` + búsqueda difusa / reglas + verificador |
 | P5 | Eventos `transcript`, `emotion` y `adaptation` |

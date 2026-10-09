@@ -41,7 +41,9 @@ async def main(base: str) -> bool:
             check("WS /ws/voz responde ready", isinstance(listo, ev.Ready), getattr(listo, "session_id", ""))
             await ws.send(ev.to_json(ev.TextInput(text="prueba de humo")))
             respuesta = ev.parse_servidor(await asyncio.wait_for(ws.recv(), 30))
-            check("WS procesa text_input", not isinstance(respuesta, ev.ErrorEvento), respuesta.type)
+            while isinstance(respuesta, ev.SourceStatus):  # estado de la fuente: no es la respuesta
+                respuesta = ev.parse_servidor(await asyncio.wait_for(ws.recv(), 30))
+            check("WS procesa text_input", isinstance(respuesta, (ev.AgentText, ev.EstadoEvento)), respuesta.type)
     except Exception as e:  # noqa: BLE001
         check("WS /ws/voz", False, f"{type(e).__name__}: {e}")
     return ok

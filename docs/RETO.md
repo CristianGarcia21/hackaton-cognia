@@ -18,7 +18,7 @@ evento y lo deja en Excel.
 
 | Peso | Criterio | Qué hacemos |
 |---|---|---|
-| 20 % | Voz y latencia | Deepgram Voice Agent (interrupciones incluidas) + Groq + tools en memoria |
+| 20 % | Voz y latencia | Deepgram Voice Agent (interrupciones incluidas) + Groq + tools sobre la API con caché |
 | 15 % | Diarización | Segundo STT de Deepgram con `diarize=true` |
 | 10 % | Despliegue | 1 contenedor en Railway, **desplegado desde el minuto 30** |
 | 25 % | UX y demo | Paneles en vivo, preguntas pulsables, historia de María |
@@ -46,7 +46,7 @@ Navegador ──audio/eventos── FastAPI /ws/voz ──┬── Deepgram Voi
 | Persona 1 · voz y UI (`web/`) | Persona 2 · cerebro e integraciones (`server/`, `mcp_servers/`, `qa/`) |
 |---|---|
 | Micrófono (AudioWorklet PCM16 16 kHz) y reproducción (24 kHz) | Puente con Deepgram (Agent + STT diarizado) |
-| Vaciar el audio en `audio_flush` (interrupciones) | Carga paginada de datos + MCP IPS |
+| Vaciar el audio en `audio_flush` (interrupciones) | Cliente de datos.gov.co (bajo demanda) + MCP IPS |
 | Paneles: transcripción, estado, emociones + adaptación, acciones, brief | Emociones, política de adaptación, verificador, brief |
 | Inspector (traza), caja de texto de respaldo, subida de Excel/CSV | MCP citas, excel y calendario; resiliencia; agente de pruebas QA |
 | Pulido visual | Despliegue y variables de entorno |
@@ -75,12 +75,14 @@ cp .env.example .env     # pide las keys a tu compañero (nunca por el chat del 
 ```
 
 Keys del reto: `DEEPGRAM_API_KEY` (cuenta en console.deepgram.com, unos 200 USD de crédito),
-`GROQ_API_KEY` (+ una segunda key opcional), `GEMINI_API_KEY`, `SODA_APP_TOKEN` (portal del desarrollador
+`GROQ_API_KEY` (+ una segunda key opcional), `GEMINI_API_KEY`, `DATOS_GOV_KEY_ID` + `DATOS_GOV_KEY_SECRET` (API key del portal del desarrollador
 de datos.gov.co).
 
 ## Datos que hay que conocer
 
-- 41 427 filas = **sede + tipo de capacidad + cantidad** (no una fila por IPS). 10 921 sedes.
+- **No se descarga el dataset:** las tools consultan la API de datos.gov.co cada vez (con caché).
+- 41 427 filas = **sede + tipo de capacidad + cantidad** (no una fila por IPS). 15 547 sedes reales
+  (id = código + número de sede); 3 145 duplicados exactos; Cali/Buenaventura cuentan como Valle.
 - Capacidades: consultorios, salas (cirugía, partos, procedimientos), camas (UCI, pediatría…),
   ambulancias, camillas, unidades móviles, sillas (quimio, hemodiálisis).
 - **Nivel de atención vacío en el 61 %** → el agente dice "sin dato", no inventa.
