@@ -32,6 +32,7 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 COMPONENTES = {"dataset": True, "mcp": True, "brief": True, "mock": True}  # mismo formato que server/main.py
 FRAME_MS = 40
 TURNOS_MARIA = 4  # turnos del agente en el guion del caso María
+ADELANTO_S = 0.2  # el audio TTS se envía ~200 ms antes de que deba sonar, como un TTS en streaming
 
 
 class StaticSinOcultos(StaticFiles):
@@ -277,10 +278,12 @@ def create_app(velocidad: float = 1.0, auto: bool = False) -> FastAPI:
         inicio, dt = loop.time(), FRAME_MS / 1000 / velocidad
         for i, frame in enumerate(frames):
             await cola.put(frame)
-            espera = inicio + (i + 1) * dt - 0.2 - loop.time()
+            espera = inicio + (i + 1) * dt - ADELANTO_S - loop.time()
             if espera > 0:
                 await asyncio.sleep(espera)
-        await asyncio.sleep(max(0, inicio + len(frames) * dt - loop.time()))  # el siguiente evento, al terminar
+        # Como un TTS real, el resto del guion sigue cuando se ENVIÓ el audio (no cuando terminó de sonar): se conserva
+        # el adelanto de ADELANTO_S y la UI no se queda sin datos entre dos trozos seguidos de la misma respuesta.
+        await asyncio.sleep(max(0, inicio + len(frames) * dt - ADELANTO_S - loop.time()))
 
     @app.get("/api/brief")
     async def brief() -> dict:

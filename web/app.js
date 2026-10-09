@@ -1,7 +1,8 @@
 // Frontend base (issue #4): conexión al WebSocket /ws/voz, indicador de estado y transcripción diarizada.
 // Contrato de eventos: server/events.py (fuente de verdad) → web/contrato.json.
 //
-// Cada evento del servidor se republica en `bus` con su `type` (y el audio TTS como "audio"), así los
+// Cada evento del servidor se republica en `bus` con su `type` (y el audio TTS como "audio"; al cerrarse el
+// socket, "desconectado"), así los
 // demás módulos (#5 audio, #12 brief, #14 emociones/acciones, #20 inspector) se suscriben sin tocar este archivo:
 //     import { bus, enviar } from "./app.js";
 //     bus.addEventListener("emotion", (e) => pintar(e.detail));
@@ -68,6 +69,7 @@ function conectar() {
     ponerConexion("desconectado", "Desconectado");
     ponerEstado("desconectado");
     ui.microfono.disabled = true;
+    bus.dispatchEvent(new CustomEvent("desconectado")); // reproductor.js corta el audio que quedaba en cola
     if (microfonoActivo) bus.dispatchEvent(new CustomEvent("microfono:stop")); // #5 suelta el micrófono
     marcarMicrofono(false);
     if (reconexionManual) {

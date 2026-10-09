@@ -22,7 +22,8 @@ def test_cada_modulo_js_se_carga_o_se_importa():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = "\n".join(f.read_text(encoding="utf-8") for f in WEB.glob("*.js"))
     for modulo in WEB.glob("*.js"):
-        assert f'src="{modulo.name}"' in html or f'"./{modulo.name}"' in js, f"{modulo.name} no se usa"
+        usos = (f'src="{modulo.name}"' in html, f'"./{modulo.name}"' in js, f'addModule("{modulo.name}")' in js)
+        assert any(usos), f"{modulo.name} no se usa"
 
 
 def test_cada_estado_del_contrato_tiene_texto_y_color():
