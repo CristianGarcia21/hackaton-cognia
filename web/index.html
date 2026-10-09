@@ -3,28 +3,88 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cognia · Agente Vocal</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: grid;
-           place-items: center; min-height: 100vh; margin: 0; }
-    main { max-width: 32rem; padding: 2rem; text-align: center; }
-    #estado { font-family: monospace; color: #94a3b8; }
-  </style>
+  <title>Kognia · Agente Vocal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+  <script type="module" src="microfono.js"></script>
 </head>
 <body>
-  <!-- Página provisional del esqueleto (issue #2). Carlos la reemplaza en el issue #4. -->
-  <main>
-    <h1>Cognia · Agente Vocal Cognitivo</h1>
-    <p id="estado">Conectando…</p>
+  <!-- Contrato de eventos: server/events.py → web/contrato.json. Cada panel tiene un id fijo que usan app.js y los
+       issues siguientes (#5 audio, #12 brief, #14 emociones/acciones, #20 inspector). -->
+  <header class="barra">
+    <div class="marca">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><path d="M12 3v18M7 8v8M17 8v8M2 11v2M22 11v2" /></svg>
+      <h1>Kognia <span>· Agente Vocal Cognitivo</span></h1>
+    </div>
+    <div class="barra-derecha">
+      <span id="conexion" class="pastilla" data-estado="conectando" role="status">Conectando…</span>
+      <button id="microfono" class="boton-mic" type="button" aria-pressed="false" disabled>
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+        <span id="microfono-texto">Activar micrófono</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="aviso-navegador" class="aviso" hidden>
+    <strong>Usa Chrome y permite el micrófono.</strong>
+    <span id="aviso-detalle">Esta demo necesita captura de audio en el navegador.</span>
+  </div>
+  <div id="aviso-error" class="aviso aviso-error" role="alert" hidden>
+    <span id="aviso-error-texto"></span>
+    <button id="reconectar" class="boton-secundario" type="button" hidden>Reconectar</button>
+    <button id="cerrar-error" class="boton-icono" type="button" aria-label="Cerrar aviso">×</button>
+  </div>
+
+  <section id="estado" class="estado" data-estado="desconectado" aria-label="Estado de la conversación">
+    <span class="estado-punto" aria-hidden="true"></span>
+    <span id="estado-texto" class="estado-texto" role="status" aria-atomic="true">Conectando con el agente…</span>
+    <!-- Onda de la voz en vivo (visualizador.js): micrófono del usuario; decorativa para lectores de pantalla. -->
+    <canvas id="onda" class="onda" aria-hidden="true"></canvas>
+    <span id="voz" class="voz" aria-hidden="true" hidden>Voz detectada</span>
+    <span id="estado-turno" class="estado-turno"></span>
+  </section>
+
+  <main class="tablero">
+    <aside class="panel" aria-labelledby="titulo-brief">
+      <h2 id="titulo-brief">Fuente de datos</h2>
+      <div id="carga" class="carga" hidden>
+        <div class="carga-barra"><div id="carga-progreso"></div></div>
+        <p id="carga-texto" class="tenue"></p>
+      </div>
+      <div id="brief" class="brief">
+        <p class="tenue">Esperando el resumen de la fuente…</p>
+      </div>
+    </aside>
+
+    <section class="panel panel-central" aria-labelledby="titulo-transcripcion">
+      <div class="panel-cabecera">
+        <h2 id="titulo-transcripcion">Transcripción</h2>
+        <div id="hablantes" class="hablantes" role="group" aria-label="Hablantes"></div>
+      </div>
+      <ol id="transcripcion" class="transcripcion">
+        <li class="vacio">Pulsa «Activar micrófono» y habla. La conversación aparecerá aquí.</li>
+      </ol>
+      <button id="ir-al-final" class="ir-al-final" type="button" hidden>Ir a lo más reciente ↓</button>
+    </section>
+
+    <aside class="columna-derecha">
+      <section class="panel" aria-labelledby="titulo-emociones">
+        <h2 id="titulo-emociones">Emociones y adaptación</h2>
+        <div id="emociones"><p class="tenue">Aún sin análisis.</p></div>
+      </section>
+      <section class="panel" aria-labelledby="titulo-acciones">
+        <h2 id="titulo-acciones">Acciones</h2>
+        <ul id="acciones" class="acciones"><li class="tenue">Aún no hay acciones.</li></ul>
+      </section>
+    </aside>
   </main>
-  <script>
-    const estado = document.getElementById("estado");
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/voz`);
-    ws.onmessage = (m) => {
-      const e = JSON.parse(m.data);
-      if (e.type === "ready") estado.textContent = `Conectado · sesión ${e.session_id} · voz ${e.voice}`;
-    };
-    ws.onclose = () => { estado.textContent = "Desconectado"; };
-  </script>
+
+  <details id="inspector" class="inspector">
+    <summary>Inspector <span class="tenue">· traza de cada turno</span></summary>
+    <div id="inspector-contenido"><p class="tenue">Las trazas de los turnos aparecerán aquí.</p></div>
+  </details>
 </body>
 </html>
