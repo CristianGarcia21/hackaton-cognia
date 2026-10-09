@@ -4,6 +4,8 @@
 - stream():     igual pero devuelve trozos de texto (para la UI).
 - structured(): devuelve un objeto Pydantic validado (extraer / clasificar datos).
 - embed():      embeddings para RAG.
+- achat() / astructured(): versiones async (backend FastAPI): no bloquean el event loop y comparten
+  el mismo fallback y enfriamiento por rate limit que las síncronas.
 """
 
 import json
@@ -49,6 +51,16 @@ def _candidates(model: str | None) -> list[str]:
     return ready + cooling  # los que están en enfriamiento solo como último recurso
 
 
+def _request(m: str, messages: list[dict], tools: list[dict] | None, temperature: float, kwargs: dict) -> dict:
+    # Gemini 3+ deprecó temperature (recomienda guiar el muestreo desde el prompt).
+    sampling = {} if config.provider_of(m) == "gemini" else {"temperature": temperature}
+    return {"model": m, "messages": messages, "tools": tools or None, "num_retries": 0, **sampling, **kwargs}
+
+
+def _all_failed(errors: list[str]) -> RuntimeError:
+    return RuntimeError("Todos los modelos fallaron:\n" + "\n".join(errors))
+
+
 def chat(messages: list[dict], model: str | None = None, tools: list[dict] | None = None,
          temperature: float = 0.3, **kwargs):
     """Llama al modelo; si falla, prueba con el siguiente de la cadena de fallback.
@@ -58,16 +70,24 @@ def chat(messages: list[dict], model: str | None = None, tools: list[dict] | Non
     """
     errors = []
     for m in _candidates(model):
-        # Gemini 3+ deprecó temperature (recomienda guiar el muestreo desde el prompt).
-        sampling = {} if config.provider_of(m) == "gemini" else {"temperature": temperature}
         try:
-            return litellm.completion(
-                model=m, messages=messages, tools=tools or None,
-                num_retries=0, **sampling, **kwargs,
-            )
+            return litellm.completion(**_request(m, messages, tools, temperature, kwargs))
         except Exception as e:  # noqa: BLE001 — cualquier fallo pasa al siguiente modelo
             errors.append(_on_failure(m, e))
-    raise RuntimeError("Todos los modelos fallaron:\n" + "\n".join(errors))
+    raise _all_failed(errors)
+
+
+async def achat(messages: list[dict], model: str | None = None, tools: list[dict] | None = None,
+                temperature: float = 0.3, **kwargs):
+    """Versión async de chat(): mismo fallback y enfriamiento, sin bloquear el event loop.
+    Para la voz conviene pasar timeout=<segundos> y así no esperar a un proveedor colgado."""
+    errors = []
+    for m in _candidates(model):
+        try:
+            return await litellm.acompletion(**_request(m, messages, tools, temperature, kwargs))
+        except Exception as e:  # noqa: BLE001 — cualquier fallo pasa al siguiente modelo
+            errors.append(_on_failure(m, e))
+    raise _all_failed(errors)
 
 
 def ask(prompt: str, system: str | None = None, model: str | None = None, **kwargs) -> str:
@@ -99,31 +119,51 @@ def _extract_json(text: str) -> str:
     return text[start:].strip()
 
 
-def structured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: str | None = None,
-                             system: str | None = None, retries: int = 2) -> T:
-    """Devuelve una instancia de `schema` validada. Reintenta si el JSON no es válido.
-
-    Funciona igual en todos los proveedores porque pide el JSON por prompt
-    en lugar de depender del modo nativo de cada uno.
-    """
+def _structured_messages(prompt: str | list[dict], schema: type[BaseModel], system: str | None) -> list[dict]:
     instructions = (
         "Responde ÚNICAMENTE con un objeto JSON válido que cumpla este JSON Schema, sin texto extra:\n"
         + json.dumps(schema.model_json_schema(), ensure_ascii=False)
     )
     messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
-    messages = [{"role": "system", "content": f"{system or ''}\n\n{instructions}".strip()}, *messages]
+    return [{"role": "system", "content": f"{system or ''}\n\n{instructions}".strip()}, *messages]
 
+
+def _correction(text: str, error: Exception) -> list[dict]:
+    return [{"role": "assistant", "content": text},
+            {"role": "user", "content": f"El JSON no es válido: {error}. Corrígelo y responde solo el JSON."}]
+
+
+def structured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: str | None = None,
+                             system: str | None = None, retries: int = 2, **kwargs) -> T:
+    """Devuelve una instancia de `schema` validada. Reintenta si el JSON no es válido.
+
+    Funciona igual en todos los proveedores porque pide el JSON por prompt
+    en lugar de depender del modo nativo de cada uno.
+    """
+    messages = _structured_messages(prompt, schema, system)
     last_error = None
     for _ in range(retries + 1):
-        text = chat(messages, model=model, temperature=0).choices[0].message.content or ""
+        text = chat(messages, model=model, temperature=0, **kwargs).choices[0].message.content or ""
         try:
             return schema.model_validate_json(_extract_json(text))
         except Exception as e:  # noqa: BLE001
             last_error = e
-            messages += [
-                {"role": "assistant", "content": text},
-                {"role": "user", "content": f"El JSON no es válido: {e}. Corrígelo y responde solo el JSON."},
-            ]
+            messages += _correction(text, e)
+    raise ValueError(f"No se obtuvo JSON válido para {schema.__name__}: {last_error}")
+
+
+async def astructured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: str | None = None,
+                                    system: str | None = None, retries: int = 2, **kwargs) -> T:
+    """Versión async de structured() (emociones, verificador, brief en el backend)."""
+    messages = _structured_messages(prompt, schema, system)
+    last_error = None
+    for _ in range(retries + 1):
+        text = (await achat(messages, model=model, temperature=0, **kwargs)).choices[0].message.content or ""
+        try:
+            return schema.model_validate_json(_extract_json(text))
+        except Exception as e:  # noqa: BLE001
+            last_error = e
+            messages += _correction(text, e)
     raise ValueError(f"No se obtuvo JSON válido para {schema.__name__}: {last_error}")
 
 
