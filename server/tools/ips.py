@@ -111,9 +111,11 @@ def canon_nivel(valor) -> str | None:
         return None
     if "sin" in v or "dato" in v or "no registrado" in v:
         return "sin dato"
-    m = re.search(r"\b([123])\b", v)
-    if m:
-        return m[1]
+    niveles = set(re.findall(r"\b([123])\b", v))
+    if len(niveles) > 1:
+        raise EntradaInvalida(f"nivel '{valor}' tiene varios valores: consulta un nivel a la vez")
+    if niveles:
+        return niveles.pop()
     raise EntradaInvalida(f"nivel '{valor}' no es válido: usa 1, 2, 3 o 'sin dato'")
 
 
@@ -443,6 +445,13 @@ class HerramientasIPS:
         if mejor_puntaje < 60:
             opciones = "; ".join(_nombre_corto(c) for _, c in puntuadas[:3])
             return "\n".join(notas + [f"No encontré una IPS que coincida bien con '{nombre}'. ¿Te refieres a: {opciones}?"])
+        # Una sola sede cuyo nombre tiene EXACTAMENTE las palabras distintivas dichas ("pablo tobón uribe" →
+        # HOSPITAL PABLO TOBON URIBE y no "... SEDE BELÉN"): es la principal; las demás se mencionan.
+        exactas = [c for _, c in puntuadas if _distintivas(c.get("nom_sede_ips")) == set(distintivas)]
+        if len(exactas) == 1:
+            mejor = exactas[0]
+            otras = [c for _, c in puntuadas if c is not mejor][:3]
+            return await self._ficha_detalle(mejor, notas, otras)
         # Varias con todas las palabras distintivas y parecido cercano: preguntar, no adivinar (un margen
         # amplio evita que gane un nombre largo que solo CONTIENE la frase, p. ej. una unidad renal).
         empatadas = [c for (comp, p, _), c in puntuadas[1:8] if comp == completo and p >= mejor_puntaje - MARGEN_EMPATE]
@@ -461,6 +470,9 @@ class HerramientasIPS:
                 + "; ".join(_nombre_corto(c) + ("" if mismo_lugar else f" ({c.get('municipio', '')})")
                             for c in opciones)
                 + (". ¿Cuál sede?" if mismo_lugar else ". ¿De cuál municipio o cuál sede?")])
+        return await self._ficha_detalle(mejor, notas, [])
+
+    async def _ficha_detalle(self, mejor: dict, notas: list[str], otras: list[dict]) -> str:
         capacidades = await self.datos.consultar(
             f"SELECT nom_grupo_capacidad, nom_descripcion_capacidad, num_cantidad_capacidad_instalada "
             f"WHERE c_digo_sede = {texto(mejor.get('c_digo_sede', ''))} AND n_mero_sede = "
@@ -485,6 +497,8 @@ class HerramientasIPS:
                 lineas.append(f"- {unidad(grupo, total_grupo)} ({visibles}{resto})")
         else:
             lineas.append("No tiene capacidad instalada registrada.")
+        if otras:
+            lineas.append("También hay: " + "; ".join(f"{_nombre_corto(c)} ({c.get('municipio', '')})" for c in otras))
         lineas.append(FUENTE)
         return "\n".join(lineas)
 
@@ -503,6 +517,10 @@ def _lista(valores: list[str], maximo: int = 4) -> str:
 
 def _palabras_nombre(nombre) -> list[str]:
     return [p for p in normalizar(_txt(nombre)).split() if len(p) >= 3 and p not in _PALABRAS_VACIAS]
+
+
+def _distintivas(nombre) -> set[str]:
+    return {p for p in _palabras_nombre(nombre) if p not in _GENERICAS}
 
 
 def _nombre_corto(s: dict) -> str:

@@ -21,8 +21,8 @@ SEDE_LAS_AMERICAS = {"departamento": "Antioquia", "municipio": "MEDELLÍN", "c_d
                      "nombre_prestador": "PROMOTORA MEDICA LAS AMERICAS S.A", "naturaleza": "Privada",
                      "direcci_n": "DIAGONAL 75B N° 2A-80", "tel_fono": "3421010", "cantidad": "28"}
 SEDE_SAN_VICENTE = {"departamento": "Antioquia", "municipio": "MEDELLÍN", "c_digo_sede": "500100011",
-                    "n_mero_sede": "02", "nom_sede_ips": "HOSPITAL SAN VICENTE FUNDACION",
-                    "nombre_prestador": "HOSPITAL SAN VICENTE FUNDACION", "naturaleza": "Privada",
+                    "n_mero_sede": "02", "nom_sede_ips": "FUNDACION HOSPITALARIA SAN VICENTE DE PAUL",
+                    "nombre_prestador": "FUNDACION HOSPITALARIA SAN VICENTE DE PAUL", "naturaleza": "Privada",
                     "num_nivel_atencion": "3", "direcci_n": "CL 64 # 51D-154", "tel_fono": "4441333",
                     "cantidad": "21"}
 
@@ -63,7 +63,7 @@ def test_buscar_ips_arma_soql_deduplicado_con_filtros_exactos():
     assert "(departamento = 'Antioquia' AND municipio IN ('MEDELLÍN'))" in principal
     assert "nom_descripcion_capacidad IN ('Quirófano', 'Sala de Cirugía')" in principal
     assert "LIMIT 5" in principal
-    assert "73 sedes" in texto and "CLÍNICA LAS AMERICAS" in texto and "HOSPITAL SAN VICENTE" in texto
+    assert "73 sedes" in texto and "CLÍNICA LAS AMERICAS" in texto and "SAN VICENTE DE PAUL" in texto
     assert "500102126-01" in texto  # id de sede para agendar
     assert "nivel sin dato" in texto and "nivel 3" in texto
     assert "datos.gov.co" in texto and "no incluye horarios" in texto.lower()
@@ -359,7 +359,7 @@ def test_detalle_con_municipio_y_empate_pregunta_cual_sede():
                  nombre_prestador="FRESENIUS")
     h, datos = herramientas(reglas=[("like", [SEDE_SAN_VICENTE, renal])])
     texto = correr(h.detalle_ips(nombre="hospital san vicente", municipio="Medellín"))
-    assert "¿Cuál sede?" in texto and "UNIDAD RENAL" in texto and "HOSPITAL SAN VICENTE FUNDACION" in texto
+    assert "¿Cuál sede?" in texto and "UNIDAD RENAL" in texto and "FUNDACION HOSPITALARIA SAN VICENTE DE PAUL" in texto
     assert not any("c_digo_sede = " in q for q in datos.consultas)
 
 
@@ -383,7 +383,7 @@ def test_detalle_busqueda_determinista():
 def test_ficha_omite_el_prestador_si_repite_el_nombre():
     h, _ = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "1"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
     texto = correr(h.buscar_ips(municipio="Medellín"))
-    assert "HOSPITAL SAN VICENTE FUNDACION (HOSPITAL SAN VICENTE FUNDACION)" not in texto
+    assert "(FUNDACION HOSPITALARIA SAN VICENTE DE PAUL)" not in texto
 
 
 def test_patron_sin_tildes_acepta_la_enie():
@@ -396,3 +396,20 @@ def test_mcp_conserva_las_descripciones_de_los_parametros():
     mcp = servidor_ips.crear_servidor(h)
     props = mcp._tool_manager.get_tool("buscar_ips").parameters["properties"]
     assert "Medellín" in props["municipio"]["description"] and "máximo 10" in props["limite"]["description"]
+
+
+def test_detalle_coincidencia_exacta_elige_la_sede_principal_y_menciona_las_demas():
+    principal = dict(SEDE_LAS_AMERICAS, nom_sede_ips="HOSPITAL PABLO TOBON URIBE", c_digo_sede="500102104",
+                     nombre_prestador="HOSPITAL PABLO TOBON URIBE")
+    sede2 = dict(principal, n_mero_sede="02", nom_sede_ips="HOSPITAL PABLO TOBON URIBE SEDE BELEN")
+    h, datos = herramientas(reglas=[("c_digo_sede = '500102104'", [{"nom_grupo_capacidad": "CAMAS",
+                                     "nom_descripcion_capacidad": "Adultos", "num_cantidad_capacidad_instalada": "300"}]),
+                                    ("like", [sede2, principal])])
+    texto = correr(h.detalle_ips(nombre="pablo tobón uribe", municipio="Medellín"))
+    assert texto.startswith("HOSPITAL PABLO TOBON URIBE ·") and "300 camas" in texto
+    assert "También hay" in texto and "SEDE BELEN" in texto
+
+
+def test_nivel_con_varios_valores_pide_aclaracion():
+    h, datos = herramientas()
+    assert correr(h.buscar_ips(municipio="Medellín", nivel="1 o 2")).startswith("Error:") and datos.consultas == []
