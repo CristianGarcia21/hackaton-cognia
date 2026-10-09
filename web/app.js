@@ -169,11 +169,23 @@ function registrarHablante(speaker, color) {
   ui.hablantes.append(chip);
 }
 
+// Si la misma persona sigue hablando tras una pausa corta, se continúa su burbuja en vez de abrir otra.
+const UNIR_S = 2.0;
+let ultimaHumana = null; // { li, speaker, fin }: última frase final de un hablante (no del Agente)
+
+function continuacion(e) {
+  const u = ultimaHumana;
+  if (!u || e.speaker === "Agente" || e.speaker !== u.speaker || e.start == null) return null;
+  if (ui.transcripcion.lastElementChild !== u.li || e.start - u.fin > UNIR_S) return null;
+  return { li: u.li, inicio: u.inicio, prefijo: u.li.querySelector(".segmento-texto").textContent };
+}
+
 function pintarTranscript(e) {
   const pegado = cercaDelFinal();
   ui.transcripcion.querySelector(".vacio")?.remove();
 
   let seg = segmentos.get(e.segment_id);
+  if (!seg && (seg = continuacion(e))) segmentos.set(e.segment_id, seg);
   if (!seg) {
     const li = document.createElement("li");
     li.className = "segmento";
@@ -195,9 +207,12 @@ function pintarTranscript(e) {
   if (e.turn_id != null) li.dataset.turno = e.turn_id;
   li.querySelector(".segmento-hablante").textContent = e.speaker;
   const tiempo = li.querySelector(".segmento-tiempo");
-  tiempo.textContent = mmss(e.start ?? seg.inicio);
-  tiempo.dateTime = `PT${Math.floor(e.start ?? seg.inicio)}S`;
-  li.querySelector(".segmento-texto").textContent = e.text;
+  tiempo.textContent = mmss(seg.inicio); // al continuar una burbuja se conserva la hora de su inicio
+  tiempo.dateTime = `PT${Math.floor(seg.inicio)}S`;
+  li.querySelector(".segmento-texto").textContent = seg.prefijo ? `${seg.prefijo} ${e.text}` : e.text;
+  if (e.is_final && e.speaker !== "Agente") {
+    ultimaHumana = { li, speaker: e.speaker, fin: e.end ?? e.start ?? seg.inicio, inicio: seg.inicio };
+  }
 
   if (pegado) irAlFinal();
   else ui.irAlFinal.hidden = false;
@@ -213,6 +228,7 @@ function marcarInterrumpido(turnId) {
 function nuevaSesion() {
   // Los segment_id y turn_id se repiten entre sesiones: lo anterior queda como historial, sin que se reescriba.
   segmentos.clear();
+  ultimaHumana = null;
   ultimoTiempo = 0;
   ui.transcripcion.querySelectorAll("[data-turno]").forEach((li) => li.removeAttribute("data-turno"));
   if (ui.transcripcion.querySelector(".segmento")) {

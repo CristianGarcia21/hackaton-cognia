@@ -16,6 +16,8 @@ from urllib.parse import urlencode
 
 import websockets
 
+from server import config
+
 log = logging.getLogger("cognia.stt")
 
 BASE = "wss://api.deepgram.com/v1/listen"
@@ -27,8 +29,11 @@ KEYTERMS = ["IPS", "EPS", "UCI", "Cali", "Medellín", "Bogotá", "Barranquilla",
 
 
 def url(keyterms: list[str] | None = None) -> str:
+    # endpointing: silencio (ms) antes de cerrar una frase. El valor por defecto (~10 ms) partía cada pausa en
+    # fragmentos sueltos y el diarizador, con menos contexto, atribuía la continuación a "otro hablante".
     params = [("model", "nova-3"), ("language", "es"), ("diarize_model", "latest"), ("interim_results", "true"),
-              ("smart_format", "true"), ("encoding", "linear16"), ("sample_rate", "16000"), ("channels", "1")]
+              ("smart_format", "true"), ("encoding", "linear16"), ("sample_rate", "16000"), ("channels", "1"),
+              ("endpointing", str(config.STT_ENDPOINTING_MS))]
     params += [("keyterm", k) for k in (KEYTERMS if keyterms is None else keyterms)]
     return f"{BASE}?{urlencode(params)}"
 

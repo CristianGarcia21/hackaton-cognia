@@ -506,6 +506,7 @@ def test_url_del_stt_tiene_diarizacion_y_keyterms():
     u = STT.url()
     assert "diarize_model=latest" in u and "language=es" in u and "interim_results=true" in u
     assert "keyterm=Cali" in u and "diarize=true" not in u
+    assert "endpointing=1000" in u  # una pausa normal no parte la frase (ni la pasa a "otro hablante")
 
 
 def test_panel_muestra_dos_hablantes_con_tiempos_y_parciales_que_se_reemplazan():
