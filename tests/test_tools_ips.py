@@ -106,10 +106,6 @@ def test_buscar_ips_filtra_naturaleza_y_nivel():
     assert "naturaleza = 'Pública'" in q and "num_nivel_atencion IS NULL" in q
 
 
-def test_buscar_ips_sin_capacidad_ordena_por_nombre():
-    h, datos = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "2"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
-    correr(h.buscar_ips(municipio="Medellín"))
-    assert any("ORDER BY nom_sede_ips" in q for q in datos.consultas)
 
 
 # ------------------------------- contar_capacidad -------------------------------
@@ -119,10 +115,11 @@ def test_contar_por_departamento_une_los_distritos_y_separa_unidades():
              {"departamento": "Cali", "nom_grupo_capacidad": "CAMAS", "cantidad": "871", "sedes": "30"},
              {"departamento": "Valle del cauca", "nom_grupo_capacidad": "CAMAS", "cantidad": "200", "sedes": "10"},
              {"departamento": "Buenaventura", "nom_grupo_capacidad": "CAMAS", "cantidad": "32", "sedes": "2"}]
-    h, datos = herramientas(reglas=[("GROUP BY departamento, nom_grupo_capacidad", filas)])
+    h, datos = herramientas(reglas=[("|> SELECT nom_grupo_capacidad, sum(cantidad)",
+                                     [{"nom_grupo_capacidad": "CAMAS", "cantidad": "2882", "sedes": "102"}]),
+                                    ("GROUP BY departamento, nom_grupo_capacidad", filas)])
     texto = correr(h.contar_capacidad(agrupar_por="departamento", capacidad="UCI"))
-    q = datos.consultas[0]
-    assert q.count("|>") == 2  # deduplicar → sumar por sede → agrupar
+    assert all(q.count("|>") == 2 for q in datos.consultas)  # deduplicar → sumar por sede → agrupar
     assert "Valle del Cauca: 1.103 camas en 42 sedes" in texto
     assert "Bogotá D.C: 1.779 camas en 60 sedes" in texto
     assert texto.index("Bogotá") < texto.index("Valle")  # ordenado de mayor a menor
@@ -140,7 +137,9 @@ def test_contar_mezcla_de_grupos_reporta_cada_unidad():
 def test_contar_por_nivel_muestra_sin_dato():
     filas = [{"num_nivel_atencion": "3", "nom_grupo_capacidad": "CAMAS", "cantidad": "50", "sedes": "5"},
              {"nom_grupo_capacidad": "CAMAS", "cantidad": "80", "sedes": "9"}]
-    h, _ = herramientas(reglas=[("GROUP BY num_nivel_atencion, nom_grupo_capacidad", filas)])
+    h, _ = herramientas(reglas=[("|> SELECT nom_grupo_capacidad, sum(cantidad)",
+                                 [{"nom_grupo_capacidad": "CAMAS", "cantidad": "130", "sedes": "14"}]),
+                                ("GROUP BY num_nivel_atencion, nom_grupo_capacidad", filas)])
     texto = correr(h.contar_capacidad(agrupar_por="nivel", capacidad="camas"))
     assert "Sin dato: 80 camas" in texto and "Nivel 3: 50 camas" in texto
 
@@ -257,7 +256,8 @@ def test_tools_contra_la_api_real():
 
 def test_singular_para_una_sede():
     filas = [{"num_nivel_atencion": "3", "nom_grupo_capacidad": "CAMAS", "cantidad": "1", "sedes": "1"}]
-    h, _ = herramientas(reglas=[("GROUP BY num_nivel_atencion, nom_grupo_capacidad", filas)])
+    h, _ = herramientas(reglas=[("|> SELECT nom_grupo_capacidad, sum(cantidad)", filas),
+                                ("GROUP BY num_nivel_atencion, nom_grupo_capacidad", filas)])
     texto = correr(h.contar_capacidad(agrupar_por="nivel", capacidad="camas"))
     assert "1 cama en 1 sede" in texto and "1 sedes" not in texto
 
@@ -284,3 +284,115 @@ def test_capacidad_desconocida_sin_sugerencias_utiles_dice_que_hay():
     texto = correr(h.buscar_ips(municipio="Medellín", capacidad="rayos x"))
     assert "rayos x" in texto.lower() and "camas" in texto.lower() and "salas" in texto.lower()
     assert "Quemados" not in texto
+
+
+# ---------------------- Revisión QA de #8 ----------------------
+
+TOTAL_Q = "|> SELECT nom_grupo_capacidad, sum(cantidad)"  # fragmento único de la consulta del total
+
+
+def test_total_sale_de_su_propia_consulta_aunque_el_desglose_venga_truncado():
+    desglose = [{"municipio": f"M{i}", "departamento": "Antioquia", "nom_grupo_capacidad": "AMBULANCIAS",
+                 "cantidad": "1", "sedes": "1"} for i in range(T.LIMITE_DESGLOSE)]
+    h, datos = herramientas(reglas=[(TOTAL_Q, [{"nom_grupo_capacidad": "AMBULANCIAS", "cantidad": "2231", "sedes": "900"}]),
+                                    ("GROUP BY municipio, departamento, nom_grupo_capacidad", desglose)])
+    texto = correr(h.contar_capacidad(agrupar_por="municipio", capacidad="ambulancias"))
+    assert "Total: 2.231 ambulancias en 900 sedes" in texto
+    assert "otros con menos capacidad" in texto
+    assert any(f"LIMIT {T.LIMITE_DESGLOSE}" in q for q in datos.consultas)
+
+
+def test_total_por_tipo_no_cuenta_sedes_repetidas():
+    desglose = [{"nom_descripcion_capacidad": "Adultos", "nom_grupo_capacidad": "CAMAS", "cantidad": "5000", "sedes": "50"},
+                {"nom_descripcion_capacidad": "Pediátrica", "nom_grupo_capacidad": "CAMAS", "cantidad": "1280", "sedes": "40"}]
+    h, _ = herramientas(reglas=[(TOTAL_Q, [{"nom_grupo_capacidad": "CAMAS", "cantidad": "6280", "sedes": "53"}]),
+                                ("GROUP BY nom_descripcion_capacidad, nom_grupo_capacidad", desglose)])
+    texto = correr(h.contar_capacidad(agrupar_por="tipo", municipio="Medellín", capacidad="camas"))
+    assert "Total: 6.280 camas en 53 sedes" in texto and "90 sedes" not in texto
+
+
+@pytest.mark.parametrize("dicho,canon", [("publica", "Pública"), ("PÚBLICA", "Pública"), ("privada", "Privada"),
+                                         ("Mixta", "Mixta")])
+def test_naturaleza_se_normaliza(dicho, canon):
+    h, datos = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "1"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
+    correr(h.buscar_ips(municipio="Medellín", naturaleza=dicho))
+    assert all(f"naturaleza = '{canon}'" in q for q in datos.consultas)
+
+
+@pytest.mark.parametrize("dicho,condicion", [("nivel 2", "num_nivel_atencion = '2'"), (2, "num_nivel_atencion = '2'"),
+                                             ("sin dato", "num_nivel_atencion IS NULL")])
+def test_nivel_se_normaliza(dicho, condicion):
+    h, datos = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "1"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
+    correr(h.buscar_ips(municipio="Medellín", nivel=dicho))
+    assert all(condicion in q for q in datos.consultas)
+
+
+@pytest.mark.parametrize("campo,valor", [("naturaleza", "rara"), ("nivel", "altísimo")])
+def test_valor_invalido_explica_sin_consultar(campo, valor):
+    h, datos = herramientas()
+    texto = correr(h.buscar_ips(municipio="Medellín", **{campo: valor}))
+    assert texto.startswith("Error:") and campo in texto and datos.consultas == []
+
+
+def test_parametros_raros_no_lanzan_excepciones():
+    h, _ = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "1"}]), ("ORDER BY", [SEDE_LAS_AMERICAS])])
+    assert "CLÍNICA LAS AMERICAS" in correr(h.buscar_ips(municipio=None, departamento="Antioquia", limite="cinco"))
+
+
+def test_un_bug_inesperado_se_devuelve_como_texto():
+    h, datos = herramientas()
+
+    async def explota(*a, **k):
+        raise RuntimeError("bug")
+    datos.consultar = explota
+    assert correr(h.buscar_ips(municipio="Medellín")).startswith("Error: tuve un problema")
+
+
+def test_buscar_sin_capacidad_ordena_por_capacidad_instalada():
+    h, datos = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "2"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
+    correr(h.buscar_ips(municipio="Medellín"))
+    assert any("ORDER BY cantidad DESC" in q and "|>" in q for q in datos.consultas)
+
+
+def test_detalle_con_municipio_y_empate_pregunta_cual_sede():
+    renal = dict(SEDE_SAN_VICENTE, c_digo_sede="999", nom_sede_ips="UNIDAD RENAL HOSPITAL SAN VICENTE",
+                 nombre_prestador="FRESENIUS")
+    h, datos = herramientas(reglas=[("like", [SEDE_SAN_VICENTE, renal])])
+    texto = correr(h.detalle_ips(nombre="hospital san vicente", municipio="Medellín"))
+    assert "¿Cuál sede?" in texto and "UNIDAD RENAL" in texto and "HOSPITAL SAN VICENTE FUNDACION" in texto
+    assert not any("c_digo_sede = " in q for q in datos.consultas)
+
+
+def test_detalle_nombre_generico_pide_mas_datos_sin_consultar():
+    h, datos = herramientas()
+    assert "muy general" in correr(h.detalle_ips(nombre="clínica")) and datos.consultas == []
+
+
+def test_detalle_municipio_no_reconocido_lo_dice():
+    h, datos = herramientas()
+    texto = correr(h.detalle_ips(nombre="hospital san vicente", municipio="Narnia"))
+    assert "No encontré el municipio 'Narnia'" in texto and datos.consultas == []
+
+
+def test_detalle_busqueda_determinista():
+    h, datos = herramientas(reglas=[("like", [])])
+    correr(h.detalle_ips(nombre="las americas"))
+    assert "ORDER BY nom_sede_ips" in datos.consultas[0]
+
+
+def test_ficha_omite_el_prestador_si_repite_el_nombre():
+    h, _ = herramientas(reglas=[("count(*) AS sedes", [{"sedes": "1"}]), ("ORDER BY", [SEDE_SAN_VICENTE])])
+    texto = correr(h.buscar_ips(municipio="Medellín"))
+    assert "HOSPITAL SAN VICENTE FUNDACION (HOSPITAL SAN VICENTE FUNDACION)" not in texto
+
+
+def test_patron_sin_tildes_acepta_la_enie():
+    assert D.patron_sin_tildes("nariño") == "'%N_R___%'"
+
+
+def test_mcp_conserva_las_descripciones_de_los_parametros():
+    from mcp_servers import ips as servidor_ips
+    h, _ = herramientas()
+    mcp = servidor_ips.crear_servidor(h)
+    props = mcp._tool_manager.get_tool("buscar_ips").parameters["properties"]
+    assert "Medellín" in props["municipio"]["description"] and "máximo 10" in props["limite"]["description"]

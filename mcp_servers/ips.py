@@ -18,11 +18,22 @@ INSTRUCCIONES = ("Consulta en vivo la relación de IPS públicas y privadas de C
 
 
 def crear_servidor(herramientas: HerramientasIPS) -> MCPServer:
-    """Servidor MCP con las tools de un HerramientasIPS ya inicializado (modo en proceso)."""
+    """Servidor MCP con las tools de un HerramientasIPS ya inicializado (modo en proceso: lo usa el hub)."""
     mcp = MCPServer("ips", instructions=INSTRUCCIONES)
     for t in herramientas.tools():
         mcp.add_tool(t.fn, name=t.name, description=t.description)
+        _copiar_descripciones(mcp, t)
     return mcp
+
+
+def _copiar_descripciones(mcp: MCPServer, t) -> None:
+    """El SDK arma el inputSchema desde la firma y pierde las descripciones de `Args:` del docstring.
+    Se copian desde el contrato Tool para que el LLM vea lo mismo por MCP que por el contrato."""
+    registrada = mcp._tool_manager.get_tool(t.name)
+    props = (registrada.parameters or {}).get("properties", {})
+    for nombre, esquema in t.parameters.get("properties", {}).items():
+        if nombre in props and esquema.get("description"):
+            props[nombre]["description"] = esquema["description"]
 
 
 def crear_servidor_autonomo() -> MCPServer:
@@ -42,6 +53,7 @@ def crear_servidor_autonomo() -> MCPServer:
     plantilla = HerramientasIPS(None, None)  # solo para leer firmas y docstrings
     for t in plantilla.tools():
         mcp.add_tool(_delegar(t.name, estado, inspect.signature(t.fn)), name=t.name, description=t.description)
+        _copiar_descripciones(mcp, t)
     return mcp
 
 

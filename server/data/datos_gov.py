@@ -71,10 +71,19 @@ def patron_like(valor: str) -> str:
 
 
 def patron_sin_tildes(palabra: str) -> str:
-    """Literal LIKE que acepta la palabra con o sin tildes: cada vocal se vuelve el comodín de UN
-    carácter (_). 'clinica' → '%CL_N_C_%' encuentra 'CLINICA' y 'CLÍNICA'. Se aplica sobre upper(campo)."""
-    base = re.sub(r"[aeiou]", "_", normalizar(re.sub(r"[%_]", " ", str(palabra))).replace(" ", "%"))
-    return texto(f"%{base.upper()}%")
+    """Literal LIKE que acepta la palabra con o sin tildes: cada vocal (y la ñ) se vuelve el comodín de UN
+    carácter (_). 'clinica' → '%CL_N_C_%' encuentra 'CLINICA' y 'CLÍNICA'; 'nariño' → '%N_R___%'.
+    Se aplica sobre upper(campo)."""
+    salida = []
+    for ch in re.sub(r"[%_]", " ", str(palabra)).lower():
+        if ch in "ñ":
+            salida.append("_")
+            continue
+        base = unicodedata.normalize("NFKD", ch).encode("ascii", "ignore").decode()
+        if not base:
+            continue
+        salida.append("_" if base in "aeiou" else ("%" if not base.isalnum() else base.upper()))
+    return texto("%" + re.sub(r"%+", "%", "".join(salida)).strip("%") + "%")
 
 
 def normalizar(valor: Any) -> str:
