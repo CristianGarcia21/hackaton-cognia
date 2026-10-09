@@ -159,3 +159,48 @@ def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch
         assert c.get("/api/ready").status_code == 503
     assert len(intentos) >= 2  # siguió reintentando en segundo plano
     componentes.clear()
+
+
+def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch):
+    intentos = []
+
+    async def bug(cliente, on_status=None):
+        intentos.append(1)
+        raise KeyError("n")
+    monkeypatch.setattr(main.datos_gov, "cargar_catalogo", bug)
+    monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.02)
+    monkeypatch.setattr(main, "estado", main.Estado())
+    componentes.clear()
+    with TestClient(app) as c:
+        time.sleep(0.2)
+        assert c.get("/api/ready").status_code == 503
+    assert len(intentos) == 1
+    componentes.clear()
+
+
+def test_difundir_no_se_bloquea_con_un_cliente_colgado(monkeypatch):
+    import asyncio
+
+    class Colgado:
+        async def send_text(self, _):
+            await asyncio.sleep(10)
+
+    class Rapido:
+        def __init__(self):
+            self.recibidos = []
+
+        async def send_text(self, t):
+            self.recibidos.append(t)
+
+    rapido = Rapido()
+    estado = main.Estado()
+    estado.conexiones = {Colgado(), rapido}
+    monkeypatch.setattr(main, "estado", estado)
+    monkeypatch.setattr(main, "TIMEOUT_DIFUSION_S", 0.05)
+
+    async def correr():
+        inicio = time.perf_counter()
+        await main._difundir(ev.SourceStatus(source="datos.gov.co", status="listo"))
+        return time.perf_counter() - inicio
+    assert asyncio.run(correr()) < 1
+    assert len(rapido.recibidos) == 1

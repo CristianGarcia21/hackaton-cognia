@@ -274,3 +274,173 @@ def test_api_real():
 def test_modificadores_refinan_la_capacidad(dicho, valores):
     cat, _ = cargar_catalogo()
     assert set(cat.resolver_capacidad(dicho).valores) == valores
+
+
+# ---------------------- Revisión QA de #7 ----------------------
+
+def catalogo_realista() -> D.Catalogo:
+    """Subconjunto con valores REALES de la API (verificados): tipos en varios grupos y homónimos."""
+    return D.Catalogo(
+        total_filas=41427,
+        municipios=[("ARMENIA", "Antioquia"), ("ARMENIA", "Quindío"), ("LA PLATA", "Huila"),
+                    ("GÓMEZ PLATA", "Antioquia"), ("LA DORADA", "Caldas"), ("LA UNIÓN", "Nariño"),
+                    ("LA UNIÓN", "Antioquia"), ("UNIÓN PANAMERICANA", "Chocó"), ("BUCARAMANGA", "Santander"),
+                    ("CÚCUTA", "Norte de Santander"), ("CALI", "Cali"), ("RIOHACHA", "La Guajira"),
+                    ("POPAYÁN", "Cauca"), ("PALMIRA", "Valle del cauca")],
+        capacidades=[("CAMAS", t) for t in ("Adultos", "Atención del Parto", "Cuidado Intensivo Adulto",
+                                            "Cuidado Intermedio Pediátrico", "Intensiva Pediátrica",
+                                            "Intermedia Pediátrica", "Obstetricia", "Pediátrica", "Psiquiatría",
+                                            "Salud Mental")]
+        + [("CAMILLAS", "Salud Mental"), ("CAMILLAS", "Observación Pediátrica"), ("SILLAS", "Salud Mental"),
+           ("SALAS", "Partos"), ("SALAS", "Sala de Cirugía"), ("SALAS", "Quirófano"),
+           ("AMBULANCIAS", "Básica"), ("AMBULANCIAS", "Medicalizada"), ("CONSULTORIOS", "Consulta Externa"),
+           ("CONSULTORIOS", "Urgencias")],
+    )
+
+
+def test_cancelar_a_un_solicitante_no_cancela_a_los_demas():
+    c = cliente(demora=0.1)
+
+    async def escenario():
+        a = asyncio.create_task(c.consultar("SELECT 9"))
+        await asyncio.sleep(0.01)
+        b = asyncio.create_task(c.consultar("SELECT 9"))
+        await asyncio.sleep(0.01)
+        a.cancel()
+        resultado_b = await b
+        with pytest.raises(asyncio.CancelledError):
+            await a
+        await asyncio.sleep(0.01)
+        return resultado_b
+    assert correr(escenario()) == [{"q": "SELECT 9"}]
+    assert any("SELECT 9" in k for k in c._cache)  # el resultado quedó en caché
+
+
+def test_el_resultado_es_una_copia_de_la_cache():
+    c = cliente()
+
+    async def mutar():
+        filas = await c.consultar("SELECT 10")
+        filas[0]["q"] = "modificado"
+        filas.append({"x": 1})
+        return await c.consultar("SELECT 10")
+    assert correr(mutar()) == [{"q": "SELECT 10"}]
+
+
+def _http_que_responde(respuesta: httpx.Response, registro: list):
+    async def handler(request):
+        registro.append(request)
+        return respuesta
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://www.datos.gov.co")
+
+
+def test_respuesta_no_json_es_fuente_no_disponible():
+    registro = []
+    c = D.ClienteDatosGov(auth=None, http=_http_que_responde(httpx.Response(200, text="<html>mant</html>"), registro))
+    with pytest.raises(D.FuenteNoDisponible, match="no válida"):
+        correr(c.consultar("SELECT 11"))
+
+
+def test_429_no_reintenta():
+    registro = []
+    c = D.ClienteDatosGov(auth=None, http=_http_que_responde(httpx.Response(429, json={}), registro))
+    with pytest.raises(D.FuenteNoDisponible, match="límite de uso"):
+        correr(c.consultar("SELECT 12"))
+    assert len(registro) == 1
+
+
+def test_400_es_consulta_invalida():
+    registro = []
+    c = D.ClienteDatosGov(auth=None, http=_http_que_responde(httpx.Response(400, text="soql error"), registro))
+    with pytest.raises(D.ConsultaInvalida):
+        correr(c.consultar("SELECT mal"))
+
+
+def test_presupuesto_total_corta_los_reintentos():
+    import time as _t
+    c = D.ClienteDatosGov(auth=None, http=api(demora=1), timeout=0.2)
+    c.presupuesto = 0.3
+    inicio = _t.perf_counter()
+    with pytest.raises(D.FuenteNoDisponible):
+        correr(c.consultar("SELECT 13"))
+    assert _t.perf_counter() - inicio < 0.9
+
+
+@pytest.mark.parametrize("valor,patron", [("san vicente", "'%SAN VICENTE%'"), ("100%_x", "'%100 X%'"),
+                                          ("O'Neill", "'%O''NEILL%'")])
+def test_patron_like_quita_comodines_y_escapa(valor, patron):
+    assert D.patron_like(valor) == patron
+
+
+@pytest.mark.parametrize("dicho", ["la", "de", "del", "san", ""])
+def test_conectores_sueltos_no_resuelven_departamento(dicho):
+    assert catalogo_realista().resolver_departamento(dicho).valores == []
+
+
+def test_santander_no_incluye_norte_de_santander():
+    assert catalogo_realista().resolver_departamento("Santander").valores == ["Santander"]
+
+
+def test_la_guajira_y_cauca_exactos():
+    cat = catalogo_realista()
+    assert cat.resolver_departamento("La Guajira").valores == ["La Guajira"]
+    assert cat.resolver_departamento("Cauca").valores == ["Cauca"]
+
+
+def test_cali_como_departamento_es_el_distrito():
+    assert catalogo_realista().resolver_departamento("Cali").valores == ["Cali"]
+
+
+@pytest.mark.parametrize("dicho,esperado", [("La Plata", ["LA PLATA"]), ("La Dorada", ["LA DORADA"])])
+def test_articulos_que_son_parte_del_nombre(dicho, esperado):
+    r = catalogo_realista().resolver_municipio(dicho)
+    assert r.valores == esperado and r.exacto
+
+
+def test_homonimo_sin_departamento_pide_aclaracion():
+    r = catalogo_realista().resolver_municipio("Armenia")
+    assert not r.exacto and set(r.sugerencias) == {"ARMENIA (Antioquia)", "ARMENIA (Quindío)"}
+
+
+def test_homonimo_con_departamento_filtra_y_soql_incluye_el_departamento():
+    r = catalogo_realista().resolver_municipio("armenia", "quindio")
+    assert r.exacto and r.filtros == [{"municipio": "ARMENIA", "departamento": "Quindío"}]
+    assert r.soql() == "(departamento = 'Quindío' AND municipio IN ('ARMENIA'))"
+
+
+def test_municipio_en_departamento_equivocado_no_adivina():
+    r = catalogo_realista().resolver_municipio("Bucaramanga", "Nariño")
+    assert r.filtros == [] and not r.exacto and r.sugerencias == ["BUCARAMANGA (Santander)"]
+
+
+def test_municipio_de_distrito_con_departamento_real():
+    r = catalogo_realista().resolver_municipio("Cali", "Valle del Cauca")
+    assert r.filtros == [{"municipio": "CALI", "departamento": "Cali"}] and r.exacto
+
+
+@pytest.mark.parametrize("dicho,pares", [
+    ("camas pediátricas", {("CAMAS", "Cuidado Intermedio Pediátrico"), ("CAMAS", "Intensiva Pediátrica"),
+                           ("CAMAS", "Intermedia Pediátrica"), ("CAMAS", "Pediátrica")}),
+    ("ambulancia medicalizada", {("AMBULANCIAS", "Medicalizada")}),
+    ("camas de obstetricia", {("CAMAS", "Obstetricia")}),
+    ("camas psiquiátricas", {("CAMAS", "Psiquiatría"), ("CAMAS", "Salud Mental")}),
+    ("sillas de salud mental", {("SILLAS", "Salud Mental")}),
+    ("partos", {("CAMAS", "Atención del Parto"), ("SALAS", "Partos")}),
+    ("sala de partos", {("SALAS", "Partos")}),
+    ("cuidado intermedio pediátrico", {("CAMAS", "Cuidado Intermedio Pediátrico"), ("CAMAS", "Intermedia Pediátrica")}),
+    ("consulta", {("CONSULTORIOS", "Consulta Externa")}),
+])
+def test_capacidad_por_pares_grupo_tipo(dicho, pares):
+    r = catalogo_realista().resolver_capacidad(dicho)
+    assert {(f["nom_grupo_capacidad"], f["nom_descripcion_capacidad"]) for f in r.filtros} == pares
+
+
+def test_soql_de_capacidad_no_mezcla_grupos():
+    r = catalogo_realista().resolver_capacidad("partos")
+    assert r.soql() == ("((nom_grupo_capacidad = 'CAMAS' AND nom_descripcion_capacidad IN ('Atención del Parto')) "
+                        "OR (nom_grupo_capacidad = 'SALAS' AND nom_descripcion_capacidad IN ('Partos')))")
+
+
+def test_grupo_solo_filtra_por_grupo():
+    r = catalogo_realista().resolver_capacidad("ambulancias")
+    assert r.campo == "nom_grupo_capacidad" and r.soql() == "nom_grupo_capacidad IN ('AMBULANCIAS')"

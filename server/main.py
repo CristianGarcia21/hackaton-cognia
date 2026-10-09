@@ -29,6 +29,7 @@ log = logging.getLogger("cognia.server")
 # Componente -> listo. Cada subsistema (datos_gov, MCP, brief...) se registra aquí al arrancar.
 componentes: dict[str, bool] = {}
 REINTENTO_DATOS_S = 15.0  # si datos.gov.co no responde al arrancar, se reintenta cada N segundos
+TIMEOUT_DIFUSION_S = 1.0  # un navegador lento no frena la difusión a los demás
 
 
 @dataclass
@@ -46,10 +47,13 @@ estado = Estado()
 
 
 async def _difundir(evento) -> None:
-    """Envía un evento a todas las sesiones abiertas (best-effort: una caída no afecta a las demás)."""
-    for ws in list(estado.conexiones):
+    """Envía un evento a todas las sesiones abiertas, en paralelo y con tiempo límite por sesión
+    (best-effort: una sesión lenta o caída no afecta a las demás ni a quien difunde)."""
+    async def a_una(ws: WebSocket) -> None:
         with suppress(Exception):
-            await _enviar(ws, evento)
+            await asyncio.wait_for(_enviar(ws, evento), TIMEOUT_DIFUSION_S)
+
+    await asyncio.gather(*(a_una(ws) for ws in list(estado.conexiones)))
 
 
 async def _conectar_datos_gov() -> None:
@@ -64,9 +68,12 @@ async def _conectar_datos_gov() -> None:
         try:
             estado.catalogo = await datos_gov.cargar_catalogo(estado.datos, on_status=progreso)
             componentes["datos_gov"] = True
-        except Exception as e:  # noqa: BLE001 — /api/ready queda en 503 mientras tanto
+        except datos_gov.FuenteNoDisponible as e:  # caída de la API: /api/ready queda en 503 y se reintenta
             log.warning("datos.gov.co no disponible (%s); reintento en %ss", e, REINTENTO_DATOS_S)
             await asyncio.sleep(REINTENTO_DATOS_S)
+        except Exception:  # noqa: BLE001 — un bug (consulta inválida, respuesta inesperada): no reintentar
+            log.exception("Error inesperado cargando el catálogo de datos.gov.co; no se reintenta")
+            return
 
 
 @asynccontextmanager
@@ -109,9 +116,9 @@ async def ws_voz(ws: WebSocket) -> None:
     turno = 0
     try:
         await _enviar(ws, ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"]))
+        estado.conexiones.add(ws)  # antes de enviar el estado: así no se pierde un "listo" que llegue ahora
         if estado.fuente is not None:
             await _enviar(ws, estado.fuente)
-        estado.conexiones.add(ws)
         while True:
             mensaje = await ws.receive()
             if mensaje["type"] == "websocket.disconnect":
