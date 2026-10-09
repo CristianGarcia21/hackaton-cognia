@@ -170,7 +170,8 @@ def pagina_citas() -> FileResponse:
 async def api_citas() -> JSONResponse:
     """Solicitudes agrupadas por IPS, sin documento ni teléfono (la URL es pública)."""
     filas = await asyncio.to_thread(estado.citas.solicitudes)
-    return JSONResponse(citas_mod.vista_publica(filas))
+    eventos = await asyncio.to_thread(estado.calendario.eventos) if estado.calendario else []
+    return JSONResponse(citas_mod.vista_publica(filas, {e["solicitud_id"]: bool(e["google_link"]) for e in eventos}))
 
 
 @app.get("/api/citas/{solicitud_id}.ics")
@@ -184,11 +185,12 @@ async def api_cita_ics(solicitud_id: int) -> Response:
 
 
 @app.api_route("/api/citas/excel", methods=["GET", "HEAD"])
-async def api_citas_excel() -> Response:
+async def api_citas_excel(sede: str | None = None) -> Response:
+    """Todas las IPS (una hoja por sede) o, con ?sede=<id>, solo las de esa IPS, listas para enviarle."""
     filas = await asyncio.to_thread(estado.citas.solicitudes)
-    contenido = await asyncio.to_thread(excel_mod.construir_excel, filas)
+    contenido = await asyncio.to_thread(excel_mod.construir_excel, filas, sede)
     return Response(contenido, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": 'attachment; filename="solicitudes-por-ips.xlsx"'})
+                    headers={"Content-Disposition": f'attachment; filename="{excel_mod.nombre_archivo(filas, sede)}"'})
 
 
 @app.get("/api/calendario")

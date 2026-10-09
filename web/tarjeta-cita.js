@@ -89,3 +89,51 @@ bus.addEventListener("action", ({ detail: a }) => {
 function stripVacios(o) {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ""));
 }
+
+// ---------- Botón "Citas" en la barra superior (lleva a /citas) ----------
+// Se inserta desde aquí para no editar index.html; usa las mismas clases que "Fuente de datos" e "Inspector".
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function botonCitas() {
+  const barra = document.querySelector(".barra-derecha");
+  if (!barra || barra.querySelector(".ir-citas")) return null;
+  const a = document.createElement("a");
+  a.className = "boton-inspector ir-citas";
+  a.href = "/citas";
+  a.title = "Ver las solicitudes de cita agrupadas por IPS";
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "icono");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ["M4 6h16v14H4z", "M4 10h16M8 3v4M16 3v4", "M9 15l2 2 4-4"]) {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    svg.append(p);
+  }
+  const texto = document.createElement("span");
+  texto.textContent = "Citas";
+  const insignia = document.createElement("span");
+  insignia.className = "insignia";
+  insignia.hidden = true;
+  a.append(svg, texto, insignia);
+  barra.insertBefore(a, barra.querySelector("#abrir-fuente"));  // antes de "Fuente de datos" (o al final)
+  a.style.textDecoration = "none";
+  return insignia;
+}
+
+const insigniaCitas = botonCitas();
+
+async function contarCitas() {
+  if (!insigniaCitas) return;
+  try {
+    const r = await fetch("/api/citas", { cache: "no-store" });
+    if (!r.ok) return;
+    const { total } = await r.json();
+    insigniaCitas.textContent = String(total);
+    insigniaCitas.hidden = !total;
+    insigniaCitas.setAttribute("aria-label", `${total} solicitudes de cita`);
+  } catch { /* sin conexión: el botón sigue funcionando sin contador */ }
+}
+
+contarCitas();
+bus.addEventListener("action", ({ detail: a }) => { if (a.kind === "cita" || a.kind === "evento") contarCitas(); });

@@ -20,20 +20,51 @@
       <h1>Kognia <span>· Solicitudes de cita</span></h1>
     </div>
     <nav class="citas-nav" aria-label="Navegación">
-      <a class="boton-secundario" href="/">← Volver al agente</a>
-      <a id="excel" class="boton-enviar citas-excel" href="/api/citas/excel" hidden>Descargar Excel</a>
+      <a class="citas-enlace" href="/">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><path d="M15 18l-6-6 6-6" /></svg>
+        Volver al agente
+      </a>
+      <a id="excel-todo" class="citas-boton citas-boton-secundario" href="/api/citas/excel" download>
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3" /></svg>
+        Excel de todas las IPS
+      </a>
     </nav>
   </header>
 
   <main class="citas-main">
-    <section class="panel citas-aviso" aria-label="Qué es esta lista">
-      <p>
-        <strong>Solicitudes, no citas confirmadas.</strong> Los datos de datos.gov.co no incluyen la agenda de las IPS:
-        cada solicitud queda <em>pendiente de confirmación por la IPS</em>, agrupada por sede y lista para enviarse.
-        Los nombres se muestran abreviados; los datos de contacto completos van solo en el Excel.
-      </p>
-      <p id="resumen" class="tenue" role="status">Cargando solicitudes…</p>
+    <section class="citas-hero" aria-labelledby="titulo">
+      <div>
+        <h2 id="titulo" class="citas-titulo">Solicitudes listas para enviar</h2>
+        <p class="citas-sub">Cada solicitud que el agente registra por voz aparece aquí agrupada por IPS. Descarga el
+          Excel de cada clínica y envíaselo para que confirme.</p>
+      </div>
+      <div class="citas-cifras" aria-live="polite">
+        <div class="citas-cifra"><span id="n-solicitudes" class="citas-cifra-valor">–</span><span>solicitudes</span></div>
+        <div class="citas-cifra"><span id="n-ips" class="citas-cifra-valor">–</span><span>IPS</span></div>
+        <div class="citas-cifra citas-cifra-ancha"><span id="proxima" class="citas-cifra-valor citas-cifra-texto">–</span><span>próxima cita</span></div>
+      </div>
     </section>
+
+    <ol class="citas-pasos" aria-label="Cómo funciona">
+      <li><span class="citas-paso-n">1</span><div><strong>Pídela por voz</strong><span>"Quiero una cita en la Valle del Lili el lunes a las 10"</span></div></li>
+      <li><span class="citas-paso-n">2</span><div><strong>Confírmala</strong><span>El agente la registra y la pone en el calendario solo</span></div></li>
+      <li><span class="citas-paso-n">3</span><div><strong>Envíala a la IPS</strong><span>Descarga el Excel de esa clínica y compártelo</span></div></li>
+    </ol>
+
+    <p class="citas-honesto">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg>
+      <span>Son <strong>solicitudes</strong>, no citas confirmadas: datos.gov.co no incluye la agenda de las IPS. Los nombres
+      se muestran abreviados; el documento y el teléfono solo van en el Excel.</span>
+    </p>
+
+    <div class="citas-herramientas">
+      <label class="citas-buscar">
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="icono"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+        <span class="visualmente-oculto">Buscar</span>
+        <input id="buscar" type="search" placeholder="Buscar IPS, paciente o motivo" autocomplete="off">
+      </label>
+      <span id="resumen" class="tenue" role="status">Cargando solicitudes…</span>
+    </div>
 
     <div id="grupos" class="citas-grupos" aria-live="polite"></div>
   </main>

@@ -122,3 +122,20 @@ def test_fichas_de_cada_fase():
 def test_exportar_excel_deja_el_boton_de_descarga():
     a = tarjetas.tarjeta("exportar_solicitudes_excel", {}, "Excel listo con 4 solicitudes en 2 hojas por IPS. Se descarga")
     assert a.kind == "excel" and a.link == "/api/citas/excel" and a.data["filas"] == 4
+
+
+def test_excel_de_una_sola_ips_listo_para_enviar(citas):
+    registrar(citas)
+    correr(citas.registrar_solicitud_cita(paciente="Luis", fecha_hora=manana_a("09:00"), sede_codigo="500102104-01",
+                                          sede_nombre="HOSPITAL PABLO TOBON URIBE", motivo="consulta"))
+    libro = load_workbook(io.BytesIO(X.construir_excel(citas.solicitudes(), sede="7600102870-01")))
+    assert libro.sheetnames == ["FUNDACION VALLE DEL LILI"]
+    filas = list(libro.active.values)
+    assert "FUNDACION VALLE DEL LILI" in filas[0][0] and "1 solicitud" in filas[1][0]
+    assert filas[4][:2] == ("#", "Paciente") and filas[5][1] == "María Gómez" and len(filas) == 6  # solo esa IPS
+    assert X.nombre_archivo(citas.solicitudes(), "7600102870-01") == "solicitudes-fundacion-valle-del-lili.xlsx"
+
+
+def test_nombre_de_archivo_conserva_las_letras_con_tilde():
+    filas = [{"sede_codigo": "1", "sede_nombre": "Fundación Clínica Ñuñoa"}]
+    assert X.nombre_archivo(filas, "1") == "solicitudes-fundacion-clinica-nunoa.xlsx"

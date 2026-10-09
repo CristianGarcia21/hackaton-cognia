@@ -440,8 +440,10 @@ def ics(s: dict) -> str | None:
         "END:VEVENT", "END:VCALENDAR", ""])
 
 
-def vista_publica(filas: list[dict]) -> dict:
-    """Solicitudes agrupadas por sede, listas para enviar a cada IPS, sin documento ni teléfono."""
+def vista_publica(filas: list[dict], en_calendario: dict[int, bool] | None = None) -> dict:
+    """Solicitudes agrupadas por sede, listas para enviar a cada IPS, sin documento ni teléfono.
+    `en_calendario`: solicitud_id → True si el evento está en Google Calendar, False si solo en el local."""
+    en_calendario = en_calendario or {}
     grupos: dict[str, dict] = {}
     for s in sorted(filas, key=lambda f: (f.get("fecha_hora") or "9999", f["id"])):
         g = grupos.setdefault(s["sede_codigo"], {"sede_codigo": s["sede_codigo"],
@@ -452,5 +454,8 @@ def vista_publica(filas: list[dict]) -> dict:
             "id": s["id"], "paciente": _enmascarar(s["paciente"]), "motivo": s["motivo"],
             "cuando": f"{_fecha(inicio)} · {_hora(inicio)}" if inicio else (s.get("fecha_preferida") or "sin fecha"),
             "fecha_hora": s.get("fecha_hora"), "estado": s["estado"], "creada": s["creada"],
-            "google": enlace_google(s), "ics": f"/api/citas/{s['id']}.ics" if inicio else None})
+            "google": enlace_google(s), "ics": f"/api/citas/{s['id']}.ics" if inicio else None,
+            "calendario": ("google" if en_calendario.get(s["id"]) else "local") if s["id"] in en_calendario else None})
+    for g in grupos.values():
+        g["excel"] = f"/api/citas/excel?sede={quote(g['sede_codigo'])}"
     return {"total": len(filas), "grupos": sorted(grupos.values(), key=lambda g: -len(g["solicitudes"]))}

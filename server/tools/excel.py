@@ -12,6 +12,7 @@ import asyncio
 import io
 import os
 import re
+import unicodedata
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -53,7 +54,20 @@ def _formato(ws, anchos: list[int]) -> None:
     ws.freeze_panes = "A2"
 
 
-def construir_excel(filas: list[dict]) -> bytes:
+def nombre_archivo(filas: list[dict], sede: str | None) -> str:
+    if not sede:
+        return "solicitudes-por-ips.xlsx"
+    nombre = next((f["sede_nombre"] for f in filas if f["sede_codigo"] == sede and f.get("sede_nombre")), sede)
+    sin_tildes = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()  # "Fundación" → "Fundacion"
+    limpio = re.sub(r"[^A-Za-z0-9]+", "-", sin_tildes).strip("-").lower()
+    return f"solicitudes-{limpio or sede}.xlsx"
+
+
+def construir_excel(filas: list[dict], sede: str | None = None) -> bytes:
+    """Todas las IPS (Resumen + una hoja por sede) o, con `sede`, solo las solicitudes de esa IPS listas para
+    enviarle: una hoja con encabezado (para quién es, cuántas, estado) y la tabla."""
+    if sede:
+        return _excel_de_una_sede([f for f in filas if f["sede_codigo"] == sede], sede)
     libro = Workbook()
     resumen = libro.active
     resumen.title = "Resumen"
@@ -75,6 +89,38 @@ def construir_excel(filas: list[dict]) -> bytes:
     _formato(resumen, [40, 18, 12, 30])
     if not por_sede:
         resumen.append(["Todavía no hay solicitudes", "", 0, ""])
+    salida = io.BytesIO()
+    libro.save(salida)
+    return salida.getvalue()
+
+
+def _excel_de_una_sede(filas: list[dict], sede: str) -> bytes:
+    from datetime import datetime
+    libro = Workbook()
+    ws = libro.active
+    nombre = next((f["sede_nombre"] for f in filas if f.get("sede_nombre")), f"Sede {sede}")
+    ws.title = _hoja_valida(nombre, set())
+    ws.append([f"Solicitudes de cita para: {nombre}"])
+    ws.append([f"Id de sede (REPS): {sede}  ·  {len(filas)} solicitud{'es' if len(filas) != 1 else ''}  ·  "
+               f"Estado: pendientes de confirmación por la IPS"])
+    ws.append([f"Generado por Kognia el {datetime.now():%Y-%m-%d %H:%M} con datos de datos.gov.co"])
+    ws.append([])
+    ws.append(ENCABEZADO)
+    for x in sorted(filas, key=lambda f: (f.get("fecha_hora") or "9999", f["id"])):
+        ws.append([x["id"], x["paciente"], _ocultar(x.get("documento")), _ocultar(x.get("telefono")), x["motivo"],
+                   (x.get("fecha_hora") or "").replace("T", " "), x.get("fecha_preferida") or "", x["estado"],
+                   (x.get("creada") or "").replace("T", " ")])
+    if not filas:
+        ws.append(["", "No hay solicitudes para esta IPS"])
+    for i, ancho in enumerate([6, 26, 14, 14, 32, 18, 22, 34, 20], 1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    ws["A1"].font = Font(bold=True, size=14, color=COLOR)
+    ws["A2"].font = Font(color="475569")
+    ws["A3"].font = Font(italic=True, color="5B6779")
+    for celda in ws[5]:
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill("solid", fgColor=COLOR)
+    ws.freeze_panes = "A6"
     salida = io.BytesIO()
     libro.save(salida)
     return salida.getvalue()

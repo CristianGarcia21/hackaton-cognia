@@ -1,57 +1,132 @@
 /* Página /citas. Usa SOLO las variables de styles.css (colores, radios, fuentes) para mantener el mismo
    sistema visual; no redefine nada de la pantalla principal. */
 
-.citas-nav { display: flex; align-items: center; gap: 10px; }
-.citas-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; text-decoration: none; }
-.citas-excel { color: #fff; }
+.visualmente-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.citas-main { width: 100%; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; }
-.citas-aviso p { margin: 0 0 6px; color: var(--texto-suave); }
-.citas-aviso strong { color: var(--texto); }
+/* ---------- Barra ---------- */
+.citas-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.citas-enlace, .citas-boton {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 10px;
+  font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+.citas-enlace { color: var(--texto-suave); }
+.citas-enlace:hover { color: var(--texto); background: var(--fondo); }
+.citas-boton { color: #fff; background: var(--primario-fuerte); border: 1px solid var(--primario-fuerte); }
+.citas-boton:hover { background: #155e75; }
+.citas-boton-secundario { color: var(--primario-fuerte); background: var(--tarjeta); border-color: var(--borde); }
+.citas-boton-secundario:hover { background: var(--fondo); border-color: var(--primario); }
+.citas-boton .icono, .citas-enlace .icono { width: 18px; height: 18px; }
 
+.citas-main { width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 20px; }
+
+/* ---------- Encabezado con cifras ---------- */
+.citas-hero { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center; }
+.citas-titulo { font-family: var(--fuente-titulos); font-size: 1.6rem; font-weight: 700; color: var(--texto);
+  text-transform: none; letter-spacing: 0; }
+.citas-sub { margin: 6px 0 0; color: var(--texto-suave); max-width: 60ch; }
+.citas-cifras { display: flex; gap: 10px; }
+.citas-cifra {
+  display: grid; min-width: 96px; padding: 10px 14px; border-radius: var(--radio); background: var(--tarjeta);
+  border: 1px solid var(--borde); box-shadow: var(--sombra); font-size: 0.82rem; color: var(--texto-suave);
+}
+.citas-cifra-ancha { min-width: 180px; }
+.citas-cifra-valor { font-family: var(--fuente-titulos); font-size: 1.5rem; font-weight: 700; color: var(--primario-fuerte);
+  font-variant-numeric: tabular-nums; }
+.citas-cifra-texto { font-size: 1rem; line-height: 1.6; color: var(--texto); }
+
+/* ---------- Pasos ---------- */
+.citas-pasos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.citas-pasos li {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radio);
+  background: var(--tarjeta); border: 1px solid var(--borde);
+}
+.citas-pasos div { display: grid; gap: 2px; }
+.citas-pasos strong { color: var(--texto); }
+.citas-pasos span:not(.citas-paso-n) { font-size: 0.86rem; color: var(--texto-suave); }
+.citas-paso-n {
+  flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--primario-fuerte); color: #fff; font-weight: 700; font-size: 0.9rem;
+}
+
+.citas-honesto {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: var(--radio);
+  background: var(--aviso-fondo); border: 1px solid var(--aviso-borde); color: #78350f; font-size: 0.92rem;
+}
+.citas-honesto .icono { flex: none; width: 20px; height: 20px; margin-top: 1px; }
+
+/* ---------- Buscador ---------- */
+.citas-herramientas { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.citas-buscar {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 320px; max-width: 460px; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); color: var(--tenue);
+}
+.citas-buscar:focus-within { border-color: var(--primario); box-shadow: 0 0 0 3px rgb(8 145 178 / 15%); }
+.citas-buscar input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font: inherit; color: var(--texto); }
+.citas-buscar .icono { width: 18px; height: 18px; }
+
+/* ---------- Tarjeta por IPS ---------- */
 .citas-grupos { display: grid; gap: 16px; }
-
-.citas-sede { padding: 0; overflow: hidden; }
+.citas-sede { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--radio);
+  box-shadow: var(--sombra); overflow: hidden; }
 .citas-sede-cabecera {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   padding: 14px 18px; border-bottom: 1px solid var(--borde); background: var(--fondo);
 }
-.citas-sede-cabecera h2 { text-transform: none; letter-spacing: 0; font-size: 1.05rem; color: var(--texto); }
-.citas-sede-id { font-size: 0.85rem; color: var(--tenue); font-variant-numeric: tabular-nums; }
-.citas-contador {
-  font-size: 0.8rem; font-weight: 600; color: var(--primario-fuerte); background: var(--tarjeta);
-  border: 1px solid var(--borde); border-radius: 999px; padding: 2px 10px;
+.citas-sede-nombre { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.citas-sede-icono {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+  background: var(--tarjeta); border: 1px solid var(--borde); color: var(--primario-fuerte);
 }
+.citas-sede-nombre h3 { margin: 0; font-family: var(--fuente-titulos); font-size: 1.08rem; color: var(--texto); overflow-wrap: anywhere; }
+.citas-sede-meta { font-size: 0.84rem; color: var(--tenue); font-variant-numeric: tabular-nums; }
 
 .citas-lista { list-style: none; margin: 0; padding: 0; }
 .citas-fila {
-  display: grid; grid-template-columns: 170px 1fr auto; gap: 6px 16px; align-items: center;
+  display: grid; grid-template-columns: 58px 1fr auto; gap: 14px; align-items: center;
   padding: 12px 18px; border-bottom: 1px solid var(--borde);
 }
 .citas-fila:last-child { border-bottom: none; }
 .citas-fila.nueva { animation: citas-resaltar 2.4s ease-out; }
 @keyframes citas-resaltar { from { background: rgb(5 150 105 / 14%); } to { background: transparent; } }
 
-.citas-cuando { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--texto); }
-.citas-detalle { min-width: 0; }
-.citas-paciente { font-weight: 500; }
-.citas-motivo { color: var(--texto-suave); font-size: 0.92rem; }
-.citas-estado {
-  display: inline-block; margin-top: 4px; font-size: 0.78rem; font-weight: 600; color: #92400e;
-  background: var(--aviso-fondo); border: 1px solid var(--aviso-borde); border-radius: 999px; padding: 1px 9px;
-}
-.citas-acciones { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.citas-acciones a {
-  display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px;
-  border: 1px solid var(--borde); color: var(--primario-fuerte); text-decoration: none; font-size: 0.88rem;
-  font-weight: 500; background: var(--tarjeta);
-}
-.citas-acciones a:hover { border-color: var(--primario); background: var(--fondo); }
+/* Mini hoja de calendario (mismo lenguaje que la ficha de cita de la pantalla principal). */
+.citas-hoja { display: grid; overflow: hidden; border: 1px solid var(--borde); border-radius: 8px; text-align: center; background: var(--tarjeta); }
+.citas-hoja-mes { padding: 1px 0; background: var(--primario-fuerte); color: #fff; font-size: 0.66rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; }
+.citas-hoja-dia { font-family: var(--fuente-titulos); font-size: 1.35rem; font-weight: 700; line-height: 1.25; color: var(--texto); }
+.citas-hoja-sin { padding: 10px 0; font-size: 0.7rem; color: var(--tenue); }
 
-.citas-vacio { text-align: center; color: var(--texto-suave); padding: 32px 16px; }
+.citas-detalle { display: grid; gap: 3px; min-width: 0; }
+.citas-linea1 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.citas-hora { font-weight: 700; color: var(--texto); font-variant-numeric: tabular-nums; }
+.citas-paciente { font-weight: 500; color: var(--texto); }
+.citas-motivo { color: var(--texto-suave); font-size: 0.92rem; overflow-wrap: anywhere; }
+.citas-insignias { display: flex; gap: 6px; flex-wrap: wrap; }
+.citas-insignia { font-size: 0.74rem; font-weight: 600; border-radius: 999px; padding: 1px 9px; border: 1px solid; }
+.citas-insignia-pendiente { color: #92400e; background: var(--aviso-fondo); border-color: var(--aviso-borde); }
+.citas-insignia-calendario { color: #065f46; background: #ecfdf5; border-color: var(--acento); }
 
-@media (max-width: 720px) {
-  .citas-fila { grid-template-columns: 1fr; }
-  .citas-acciones { justify-content: flex-start; }
+.citas-acciones { display: flex; gap: 6px; }
+.citas-icono-boton {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--borde);
+  color: var(--primario-fuerte); background: var(--tarjeta);
+}
+.citas-icono-boton:hover { border-color: var(--primario); background: var(--fondo); }
+.citas-icono-boton .icono { width: 18px; height: 18px; }
+
+.citas-vacio { display: grid; justify-items: center; gap: 10px; padding: 40px 16px; text-align: center; color: var(--texto-suave);
+  background: var(--tarjeta); border: 1px dashed var(--borde); border-radius: var(--radio); }
+.citas-vacio strong { color: var(--texto); font-size: 1.05rem; }
+
+@media (max-width: 860px) {
+  .citas-hero { grid-template-columns: 1fr; }
+  .citas-pasos { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .citas-cifras { flex-wrap: wrap; }
+  .citas-fila { grid-template-columns: 52px 1fr; }
+  .citas-acciones { grid-column: 2; }
+  .citas-sede-cabecera .citas-boton { width: 100%; justify-content: center; }
   .barra { flex-wrap: wrap; }
 }
+@media (prefers-reduced-motion: reduce) { .citas-fila.nueva { animation: none; } }

@@ -302,3 +302,11 @@ def test_excel_y_calendario_por_http(client):
     cal = client.get("/api/calendario").json()
     assert cal["backend"] in ("local", "google") and cal["eventos"] == []
     assert client.get("/api/calendario.ics").text.startswith("BEGIN:VCALENDAR")
+
+
+def test_excel_por_ips_y_estado_de_calendario_en_la_api(client):
+    g = client.get("/api/citas").json()["grupos"][0]
+    assert g["excel"] == f"/api/citas/excel?sede={g['sede_codigo']}"
+    r = client.get(g["excel"])
+    assert r.status_code == 200 and ".xlsx" in r.headers["content-disposition"]
+    assert "solicitudes-por-ips" not in r.headers["content-disposition"]
