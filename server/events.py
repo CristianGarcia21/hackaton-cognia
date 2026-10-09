@@ -82,6 +82,13 @@ def _normalizar(validos: tuple[str, ...], por_defecto: str, sinonimos: dict[str,
     return BeforeValidator(validar)
 
 
+def normalizar_emocion(v: Any) -> str:
+    """La misma normalización que usa Emotion (tildes, sinónimos; desconocida → "neutral")."""
+    k = _clave(v)
+    k = _SINONIMOS_EMOCION.get(k, k)
+    return k if k in get_args(EmocionNombre) else "neutral"
+
+
 def _numero(v: Any, si_nan: float) -> float:
     """Número o ValueError (→ ValidationError). bool/None/texto no numérico se rechazan; NaN → si_nan."""
     if v is None or isinstance(v, bool):

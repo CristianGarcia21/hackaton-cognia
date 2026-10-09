@@ -4,6 +4,7 @@
     T2 agente     WebSocket con Deepgram Voice Agent: envía audio (o KeepAlive) y despacha sus eventos
     T3 STT        WebSocket con Deepgram Listen (diarize): transcripción por hablante para el panel (#11)
     T4 tools      una tarea por FunctionCallRequest → hub MCP → FunctionCallResponse (cancelable)
+    T5 emociones  por turno del usuario: emoción → política de adaptación → UpdatePrompt/UpdateSpeak (#13)
     T7 emisor     ÚNICA tarea que escribe en el WebSocket del navegador (cola de salida)
 
 El agente de Deepgram se abre con el primer `start` o `text_input` (gesto del usuario: el navegador deja
@@ -25,6 +26,8 @@ from rapidfuzz import fuzz
 from server import events as ev
 from server import tools_registry
 from server.deepgram_agent import ErrorAgente
+from server.cognition import emotions
+from server.cognition.adaptation import Politica
 from server.deepgram_stt import ErrorSTT, segmentos
 from server.mcp_hub import HubMCP
 from server.states import Cambio, Evento, Maquina
@@ -49,7 +52,8 @@ class _Audio:
 
 class Sesion:
     def __init__(self, ws: WebSocket, session_id: str, hub: HubMCP,
-                 abrir_agente: Callable[[list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None):
+                 abrir_agente: Callable[[list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None,
+                 voz: str = "aura-2-celeste-es"):
         self.ws, self.session_id, self.hub = ws, session_id, hub
         self._abrir_agente = abrir_agente  # funciones -> ConexionAgente (inyectable en tests)
         self._abrir_stt = abrir_stt  # () -> ConexionSTT con diarización; None = sin panel diarizado
@@ -59,6 +63,10 @@ class Sesion:
         self._textos_pendientes = 0  # text_input aún sin su ConversationText: esos sí van al panel
         self._fragmento = 0  # fragmento del STT: parciales y final comparten segment_id
         self._dichos_agente: deque[str] = deque(maxlen=3)  # para reconocer su eco en el micrófono
+        self.afecto = emotions.EstadoAfectivo()
+        self.politica = Politica(voz)
+        self.analizar_emocion = emotions.analizar  # inyectable en tests
+        self._ultimo_hablante = "Hablante 1"  # del STT diarizado: a quién atribuir la emoción
         self.maquina = Maquina()
         self.agente = None
         self.microfono = False
@@ -206,6 +214,8 @@ class Sesion:
                                       end=s.fin, is_final=final))
         if final:
             self._fragmento += 1
+            if segs := segmentos(d):
+                self._ultimo_hablante = f"Hablante {segs[-1].hablante + 1}"
 
     # ------------------------------- T2 agente -------------------------------
 
@@ -314,6 +324,7 @@ class Sesion:
         turno = self.maquina.turn_id
         if rol == "user":
             self._cambio(self.maquina.aplicar(Evento.USUARIO_TERMINA))
+            self._tarea(self._emocion(texto, turno), "T5-emocion")  # en paralelo: nunca frena la respuesta
             # Por voz, el panel lo llena el STT diarizado; si no está (o fue texto escrito), este texto.
             if self.stt is None or self._textos_pendientes > 0:
                 self._textos_pendientes = max(0, self._textos_pendientes - 1)
@@ -336,6 +347,23 @@ class Sesion:
             self.emitir(ev.EstadoEvento(state=E.INTERRUMPIDO, turn_id=cambio.turn_id - 1))
             self.emitir(ev.AudioFlush(turn_id=cambio.turn_id - 1))
         self.emitir(ev.EstadoEvento(state=cambio.estado, turn_id=cambio.turn_id))
+
+    # ------------------------------- T5 emociones y adaptación -------------------------------
+
+    async def _emocion(self, texto: str, turno: int) -> None:
+        hablante = self._ultimo_hablante
+        emo = await self.analizar_emocion(texto)
+        self.afecto.agregar(emo)
+        self.emitir(ev.Emotion(turn_id=turno, speaker=hablante, sentiment=emo.sentimiento, emotion=emo.emocion,
+                               intensity=emo.intensidad, signals=emo.senales))
+        cambio = self.politica.evaluar(self.afecto)
+        if cambio is None:
+            return
+        log.info("Sesión %s: adaptación → %s (%s)", self.session_id, cambio.evento.rule, cambio.evento.reason)
+        if self.agente is not None:
+            for m in cambio.mensajes:
+                await self.agente.enviar(m)
+        self.emitir(cambio.evento)
 
     # ------------------------------- T4 tools -------------------------------
 

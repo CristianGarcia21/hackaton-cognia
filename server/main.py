@@ -145,7 +145,7 @@ async def ws_voz(ws: WebSocket) -> None:
     await ws.accept()
     session_id = uuid.uuid4().hex[:12]
     log.info("Sesión %s abierta", session_id)
-    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente, _abrir_stt)
+    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente, _abrir_stt, voz=config.VOZ)
     iniciales = [ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"])]
     if estado.fuente is not None:
         iniciales.append(estado.fuente)

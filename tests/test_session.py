@@ -553,3 +553,48 @@ def test_al_cerrar_el_navegador_se_cierra_el_stt():
 
     correr(con_stt(prueba, stt))
     assert stt.cerrado
+
+
+# ------------------------------- emociones y adaptación (#13) -------------------------------
+
+from server.cognition import emotions as EMO  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _emocion_sin_llm(monkeypatch):
+    """Ningún test de la sesión llama al LLM real de emociones."""
+    async def neutral(texto):
+        return EMO.Emocion()
+    monkeypatch.setattr(S.emotions, "analizar", neutral)
+
+
+def test_cada_turno_del_usuario_emite_emocion_y_adapta_al_agente(monkeypatch):
+    async def ansioso(texto):
+        return EMO.Emocion(emocion="ansiedad", sentimiento=-0.4, intensidad=0.7, senales=["miedo"])
+    monkeypatch.setattr(S.emotions, "analizar", ansioso)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "tengo mucho miedo"})
+        await esperar(lambda: ws.de_tipo(ev.Adaptation) and ("inactivo", 1) in ws.estados())
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    e = ws.de_tipo(ev.Emotion)[0]
+    assert (e.emotion, e.speaker, e.turn_id, e.signals) == ("ansiedad", "Hablante 1", 1, ["miedo"])
+    a = ws.de_tipo(ev.Adaptation)[0]
+    assert a.rule == "ansiedad" and a.active and a.speed == 0.9
+    tipos = agente.tipos_enviados()
+    assert "UpdatePrompt" in tipos and "UpdateSpeak" in tipos
+
+
+def test_una_emocion_lenta_no_frena_la_respuesta(monkeypatch):
+    async def lenta(texto):
+        await asyncio.sleep(2)
+        return EMO.Emocion()
+    monkeypatch.setattr(S.emotions, "analizar", lenta)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "hola"})
+        await esperar(lambda: ("inactivo", 1) in ws.estados(), tope=1.0)
+
+    ws, _, _ = correr(con_sesion(prueba))
+    assert not ws.de_tipo(ev.Emotion)
