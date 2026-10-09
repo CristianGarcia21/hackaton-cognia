@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640" font-family="Segoe UI, Noto Sans, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#475569"/>
+    </marker>
+    <style>
+      .caja{fill:#ffffff;stroke:#d5e6ec;stroke-width:1.5}
+      .zona{fill:#f1f8fa;stroke:#cfe3ea;stroke-width:1.2}
+      .t{font-size:15px;font-weight:700;fill:#0f172a}
+      .s{font-size:12.5px;fill:#475569}
+      .z{font-size:13px;font-weight:700;fill:#0e7490;letter-spacing:.06em}
+      .l{stroke:#475569;stroke-width:1.6;fill:none}
+      .e{font-size:11.5px;fill:#334155}
+      .mcp{fill:#ecfeff;stroke:#67e8f9;stroke-width:1.4}
+      .ext{fill:#fffbeb;stroke:#fcd34d;stroke-width:1.4}
+    </style>
+  </defs>
+  <rect width="1100" height="640" fill="#ffffff"/>
+
+  <!-- Navegador -->
+  <rect class="zona" x="20" y="20" width="230" height="600" rx="14"/>
+  <text class="z" x="40" y="48">NAVEGADOR</text>
+  <rect class="caja" x="38" y="66" width="194" height="74" rx="10"/>
+  <text class="t" x="52" y="92">Micrófono</text>
+  <text class="s" x="52" y="112">AudioWorklet · PCM16 16 kHz</text>
+  <text class="s" x="52" y="129">cancelación de eco</text>
+  <rect class="caja" x="38" y="156" width="194" height="58" rx="10"/>
+  <text class="t" x="52" y="181">Voz del agente</text>
+  <text class="s" x="52" y="200">PCM16 24 kHz · audio_flush</text>
+  <rect class="caja" x="38" y="230" width="194" height="150" rx="10"/>
+  <text class="t" x="52" y="255">Paneles en vivo</text>
+  <text class="s" x="52" y="276">transcripción diarizada</text>
+  <text class="s" x="52" y="294">emociones y adaptación</text>
+  <text class="s" x="52" y="312">verificación ✔ / ⚠</text>
+  <text class="s" x="52" y="330">ficha de la cita</text>
+  <text class="s" x="52" y="348">inspector (traza)</text>
+  <text class="s" x="52" y="366">fuente de datos (brief)</text>
+  <rect class="caja" x="38" y="396" width="194" height="74" rx="10"/>
+  <text class="t" x="52" y="421">/citas</text>
+  <text class="s" x="52" y="441">solicitudes por IPS</text>
+  <text class="s" x="52" y="458">Excel por clínica · .ics</text>
+
+  <!-- Backend -->
+  <rect class="zona" x="290" y="20" width="520" height="600" rx="14"/>
+  <text class="z" x="310" y="48">BACKEND · FastAPI + asyncio (1 contenedor)</text>
+  <rect class="caja" x="308" y="66" width="484" height="118" rx="10"/>
+  <text class="t" x="324" y="92">Sesión por WebSocket /ws/voz</text>
+  <text class="s" x="324" y="113">máquina de estados: escuchando → pensando → tool → hablando → interrumpido</text>
+  <text class="s" x="324" y="132">T1 audio · T2 Voice Agent · T3 STT diarizado · T4 tools · T5 emociones</text>
+  <text class="s" x="324" y="151">T6 verificador · T7 emisor único hacia el navegador</text>
+  <text class="s" x="324" y="170">reconexión con historial · cadena de LLM con respaldo</text>
+
+  <rect class="caja" x="308" y="200" width="236" height="168" rx="10"/>
+  <text class="t" x="324" y="226">Capa cognitiva</text>
+  <text class="s" x="324" y="248">brief del dataset</text>
+  <text class="s" x="324" y="267">emociones → adaptación</text>
+  <text class="s" x="324" y="286">(UpdatePrompt / UpdateSpeak)</text>
+  <text class="s" x="324" y="305">verificador contra las tools</text>
+  <text class="s" x="324" y="324">memoria de lecciones</text>
+  <text class="s" x="324" y="343">traza por turno</text>
+
+  <rect class="caja" x="556" y="200" width="236" height="168" rx="10"/>
+  <text class="t" x="572" y="226">Hub MCP (cliente)</text>
+  <text class="s" x="572" y="248">list_tools → functions del LLM</text>
+  <text class="s" x="572" y="267">call_tool con tope de tiempo</text>
+  <text class="s" x="572" y="286">caché por argumentos (lecturas)</text>
+  <text class="s" x="572" y="305">supervisión y reconexión</text>
+  <text class="s" x="572" y="324">errores como texto</text>
+  <text class="s" x="572" y="343">defer_until_eot si hay efectos</text>
+
+  <text class="z" x="310" y="400">SERVIDORES MCP</text>
+  <rect class="mcp" x="308" y="412" width="236" height="64" rx="10"/>
+  <text class="t" x="324" y="437">ips</text>
+  <text class="s" x="324" y="457">buscar · contar · detalle · describir</text>
+  <rect class="mcp" x="556" y="412" width="236" height="64" rx="10"/>
+  <text class="t" x="572" y="437">citas</text>
+  <text class="s" x="572" y="457">proponer · registrar · horarios</text>
+  <rect class="mcp" x="308" y="490" width="236" height="64" rx="10"/>
+  <text class="t" x="324" y="515">calendario</text>
+  <text class="s" x="324" y="535">crear_evento_cita (local + Google)</text>
+  <rect class="mcp" x="556" y="490" width="236" height="64" rx="10"/>
+  <text class="t" x="572" y="515">excel</text>
+  <text class="s" x="572" y="535">exportar_solicitudes_excel</text>
+  <text class="s" x="324" y="590">SQLite: solicitudes · eventos · lecciones</text>
+
+  <!-- Externos -->
+  <rect class="zona" x="850" y="20" width="230" height="600" rx="14"/>
+  <text class="z" x="870" y="48">SERVICIOS</text>
+  <rect class="ext" x="868" y="66" width="194" height="118" rx="10"/>
+  <text class="t" x="882" y="92">Deepgram</text>
+  <text class="s" x="882" y="113">Voice Agent: STT Nova-3</text>
+  <text class="s" x="882" y="131">LLM · TTS Aura-2 español</text>
+  <text class="s" x="882" y="149">STT diarizado aparte</text>
+  <text class="s" x="882" y="167">fin de turno · interrupciones</text>
+  <rect class="ext" x="868" y="200" width="194" height="98" rx="10"/>
+  <text class="t" x="882" y="226">Groq</text>
+  <text class="s" x="882" y="247">gpt-oss-20b: conversación</text>
+  <text class="s" x="882" y="265">y emociones</text>
+  <text class="s" x="882" y="283">gpt-oss-120b: verificador</text>
+  <rect class="ext" x="868" y="412" width="194" height="64" rx="10"/>
+  <text class="t" x="882" y="437">datos.gov.co</text>
+  <text class="s" x="882" y="457">API SODA3 · REPS de IPS</text>
+  <rect class="ext" x="868" y="490" width="194" height="64" rx="10"/>
+  <text class="t" x="882" y="515">Google Calendar</text>
+  <text class="s" x="882" y="535">cuenta de servicio</text>
+
+  <!-- Flechas -->
+  <path class="l" d="M232 103 H300" marker-end="url(#f)"/>
+  <text class="e" x="248" y="96">audio</text>
+  <path class="l" d="M300 185 H240" marker-end="url(#f)"/>
+  <text class="e" x="246" y="178">eventos</text>
+  <path class="l" d="M792 110 H860" marker-end="url(#f)"/>
+  <path class="l" d="M860 140 H800" marker-end="url(#f)"/>
+  <text class="e" x="800" y="100">audio</text>
+  <text class="e" x="796" y="156">FunctionCall</text>
+  <path class="l" d="M426 200 V192 H836 V250 H860" marker-end="url(#f)"/>
+  <text class="e" x="812" y="244">LLM</text>
+  <path class="l" d="M674 368 V404" marker-end="url(#f)"/>
+  <path class="l" d="M426 476 V483 H836 V444 H860" marker-end="url(#f)" stroke-dasharray="5 4"/>
+  <path class="l" d="M426 554 V568 H836 V522 H860" marker-end="url(#f)" stroke-dasharray="5 4"/>
+  <path class="l" d="M232 450 H266 V586 H300" marker-end="url(#f)"/>
+  <text class="e" x="238" y="604">/api/citas</text>
+</svg>

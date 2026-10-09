@@ -1,93 +1,201 @@
+<div align="center">
+
 # Kognia · Agente Vocal Cognitivo
 
-Agente conversacional **por voz y en tiempo real** sobre la «Relación de IPS públicas y privadas según el nivel de
-atención y capacidad instalada» (datos.gov.co, 41 427 registros). Explica de qué trata la fuente, responde por voz
-con datos reales, registra solicitudes de cita y muestra en vivo la transcripción diarizada, las emociones, cómo se
-adapta el agente y la traza de cómo razonó.
+**Un agente de voz que encuentra la IPS que tienes que buscar y te deja la solicitud de cita organizada y lista para enviar,
+usando solo los datos abiertos de datos.gov.co.**
 
-- **URL pública:** <https://hackaton-kognia.onrender.com/> (Chrome, con micrófono)
-- **Repositorio:** <https://github.com/CristianGarcia21/hackaton-cognia>
+[![Demo en vivo](https://img.shields.io/badge/demo-hackaton--kognia.onrender.com-0e7490?style=for-the-badge&logo=render&logoColor=white)](https://hackaton-kognia.onrender.com/)
+[![Tests](https://img.shields.io/badge/tests-496%20pasando-059669?style=for-the-badge&logo=pytest&logoColor=white)](#ejecutar-en-local)
+
+![Python](https://img.shields.io/badge/Python_3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-E92063?logo=pydantic&logoColor=white)
+![Deepgram](https://img.shields.io/badge/Deepgram_Voice_Agent-13EF93?logoColor=black)
+![Groq](https://img.shields.io/badge/Groq_gpt--oss-F55036)
+![MCP](https://img.shields.io/badge/Model_Context_Protocol-1E293B)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
+![Google Calendar](https://img.shields.io/badge/Google_Calendar-4285F4?logo=googlecalendar&logoColor=white)
+![Excel](https://img.shields.io/badge/Excel_(openpyxl)-217346)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+
+</div>
+
+---
+
+## El problema
+
+Una persona en Colombia que necesita atención (una cirugía, una UCI para un familiar, hemodiálisis) no sabe qué
+instituciones de su ciudad tienen esa capacidad, ni dónde quedan, ni cómo pedir una cita sin llamar a diez lugares.
+El gobierno publica esa información en datos.gov.co, en la *Relación de IPS públicas y privadas según el nivel de
+atención y capacidad instalada* (41 427 registros del REPS), pero en forma de tabla: nadie la consulta en una
+urgencia.
+
+## Qué hace Kognia
+
+Le hablas como a una persona y el agente hace el resto:
+
+> **Tú:** «Necesito una cirugía en Cali, ¿qué hospitales tienen quirófano?»
+> **Kognia:** «Encontré 82 sedes en Cali con quirófano o sala de cirugía. Las de mayor capacidad son la Clínica
+> Imbanaco, el Hospital Universitario del Valle y la Fundación Valle del Lili…»
+> **Tú:** «En la Valle del Lili, el martes 13 a las 4 de la tarde.»
+> **Kognia:** «Necesito tu nombre completo, tu documento y un teléfono de contacto.»
+> *(en pantalla aparece la ficha de la cita, «Por confirmar»)*
+> **Tú:** «Sí, confírmala.»
+> **Kognia:** «Quedó registrada para el martes 13 a las 4 de la tarde, pendiente de confirmación por la IPS. Ya está
+> en tu calendario.»
+
+Detrás de esa conversación pasan cuatro cosas que el usuario no ve:
+
+1. **Busca en datos.gov.co en vivo.** Cada respuesta sale de una consulta a la API pública; no hay una copia del dataset.
+2. **Agenda en una agenda propia.** Los datos no traen la agenda de las IPS, así que Kognia registra una *solicitud*
+   con franja de 30 minutos y sin choques de horario, y lo dice con honestidad: queda pendiente de confirmación.
+3. **La pone en el calendario sola.** El modelo llama al servidor MCP de calendario y el evento aparece en Google
+   Calendar sin que nadie haga clic.
+4. **La deja lista para enviar.** En [`/citas`](https://hackaton-kognia.onrender.com/citas) las solicitudes quedan
+   agrupadas por clínica, y cada clínica tiene su botón para descargar un Excel con sus citas.
+
+## Herramientas del agente
+
+Cada herramienta es una tool expuesta por un servidor **MCP** (Model Context Protocol). El modelo no ejecuta nada:
+decide qué tool usar y con qué argumentos, y el backend la ejecuta.
+
+| | Servidor MCP | Tools | Qué hace |
+|:-:|---|---|---|
+| <img src="docs/img/iconos/ips.svg" width="36"> | **ips** | `buscar_ips` · `contar_capacidad` · `detalle_ips` · `describir_datos` | Consulta la API de datos.gov.co: qué sedes tienen una capacidad, cuántas camas hay, dirección y teléfono registrados |
+| <img src="docs/img/iconos/citas.svg" width="36"> | **citas** | `proponer_cita` · `registrar_solicitud_cita` · `horarios_ocupados` · `listar_solicitudes` | Valida día, hora, documento y teléfono, revisa que la franja esté libre, muestra la ficha y registra la solicitud en SQLite |
+| <img src="docs/img/iconos/calendario.svg" width="36"> | **calendario** | `crear_evento_cita` | Crea el evento en Google Calendar (cuenta de servicio) y en el calendario local, con feed `.ics` |
+| <img src="docs/img/iconos/excel.svg" width="36"> | **excel** | `exportar_solicitudes_excel` | Genera el `.xlsx` con una hoja por IPS; en `/citas` se descarga por clínica |
+
+Y la capa que corre en paralelo, sin frenar la voz:
+
+| | Componente | Qué hace |
+|:-:|---|---|
+| <img src="docs/img/iconos/voz.svg" width="36"> | **Voz** | Deepgram Voice Agent: STT Nova-3 en español, LLM en Groq, voz Aura-2; maneja fin de turno e interrupciones |
+| <img src="docs/img/iconos/diarizacion.svg" width="36"> | **Diarización** | Un segundo STT con el mismo audio separa Hablante 1, Hablante 2… para el panel de transcripción |
+| <img src="docs/img/iconos/emociones.svg" width="36"> | **Emociones y adaptación** | Analiza cada turno y, si cambia la emoción, ajusta el estilo y la velocidad del agente en vivo |
+| <img src="docs/img/iconos/verificador.svg" width="36"> | **Verificador** | Compara cada respuesta con lo que devolvieron las tools; si algo no está respaldado, el agente se corrige en voz |
+| <img src="docs/img/iconos/memoria.svg" width="36"> | **Memoria de lecciones** | Las correcciones del usuario mejoran el reconocimiento de nombres en las siguientes sesiones |
+| <img src="docs/img/iconos/traza.svg" width="36"> | **Traza** | Por cada turno: tiempos de cada etapa, tools con sus argumentos y el contexto que vio el modelo |
+| <img src="docs/img/iconos/seguridad.svg" width="36"> | **Seguridad** | Defensa contra inyección de prompt, datos personales enmascarados, consultas que nunca escribe el LLM |
 
 ## Arquitectura
 
+<p align="center"><img src="docs/img/arquitectura.svg" alt="Arquitectura de Kognia" width="100%"></p>
+
+Un solo contenedor con FastAPI y asyncio. Cada pestaña del navegador abre una sesión por WebSocket con siete tareas
+concurrentes: recibir audio, hablar con Deepgram, transcribir con diarización, ejecutar tools, analizar emociones,
+verificar respuestas y una única tarea que le escribe al navegador. El contrato de eventos entre navegador y backend
+está en [`server/events.py`](server/events.py) (modelos Pydantic, exportados a `web/contrato.json`).
+
+### Una petición por dentro
+
 ```text
-Navegador (HTML + JS sin build)                      Backend: 1 contenedor, FastAPI + uvicorn (asyncio)
- micrófono → AudioWorklet PCM16 16 kHz ──WS /ws/voz──▶ Sesión por WebSocket = máquina de estados + TaskGroup
- voz del agente ◀─ PCM16 24 kHz + eventos JSON ◀──────   ├─ Deepgram Voice Agent: STT Nova-3 es · LLM Groq gpt-oss-20b
- paneles: esfera · transcripción · emociones ·           │    (respaldo: 2.ª key → gpt-4o-mini) · TTS Aura-2 es
-          adaptación · acciones · fuente · inspector     ├─ Deepgram STT diarizado en paralelo (solo para el panel)
-                                                         ├─ Hub MCP ─▶ IPS (datos.gov.co SODA3 bajo demanda + caché)
-                                                         │          └▶ Citas (SQLite: agenda por sede, .ics, Google Calendar)
-                                                         └─ Cognición en paralelo (Groq vía LiteLLM con fallback):
-                                                              brief · emociones + adaptación · verificador QA ·
-                                                              memoria de lecciones · traza
+usuario habla ─▶ Deepgram STT ─▶ Groq decide la tool ─▶ FunctionCallRequest ─▶ hub MCP ─▶ tool ─▶ API datos.gov.co
+                                                                                                        │
+usuario escucha ◀─ Deepgram TTS ◀─ Groq redacta con el resultado ◀─ FunctionCallResponse ◀──────────────┘
+                          en paralelo: emociones · verificador · traza
 ```
 
-El contrato entre navegador y backend es `server/events.py` (modelos Pydantic, exportado a `web/contrato.json`).
+Tiempos medidos en una consulta real con tool: fin de turno 60 ms, decisión del LLM 387 ms, tool 411 ms, redacción
+706 ms. El primer audio de la respuesta llega entre 1,3 y 1,8 s después de que el usuario deja de hablar.
+
+## Solo datos de datos.gov.co
+
+El jurado pidió que el agente no use nada fuera de la fuente oficial, y esto se cumple en tres capas:
+
+- **El LLM nunca escribe la consulta.** Le pasa a la tool valores como «Cali» o «quirófano»; la tool arma el SoQL con
+  valores escapados, deduplica (el dataset trae 3 145 filas repetidas) y devuelve un texto corto. El modelo nunca ve los
+  41 427 registros.
+- **El prompt lo prohíbe de forma explícita:** solo puede afirmar lo que devolvieron sus tools. Si le preguntan por
+  síntomas, medicamentos, EPS o especialistas, responde que eso no está en el registro y ofrece lo que sí puede consultar.
+- **El verificador lo controla después de cada respuesta.** Si aparece una cifra, un nombre o una dirección que no salió
+  de una tool, lo marca y el agente se corrige.
+
+Las citas siguen la misma regla: la clínica siempre sale del registro de datos.gov.co (su id REPS), y lo único propio
+es la agenda de solicitudes, porque los datos públicos no traen la agenda de las IPS.
 
 ## Decisiones técnicas
 
 | Decisión | Por qué |
 |---|---|
-| **Monolito modular** en un contenedor | Un solo punto de falla y de despliegue (M07: un único reintento). Cada sistema externo es un servidor MCP que se puede separar por configuración. |
-| **asyncio orientado a eventos** | Casi todo es espera de red (Deepgram, Groq, datos.gov.co). Un emisor único por sesión escribe en el WebSocket. |
-| **Máquina de estados** (escuchando → pensando → consultando → hablando → interrumpido) | Interrupciones naturales: al hablar encima se vacía el audio en < 100 ms (`audio_flush`) y se descarta lo del turno viejo. |
-| **Tools sobre la API, sin embeddings** | Los datos son tabulares: un LLM no debe «recordar» cifras. Las tools arman SoQL (paginación y filtros), suman sin duplicados y el modelo nunca ve los 41 000 registros. |
-| **Catálogo de búsqueda** al arrancar | Traduce lo que dice el usuario (errores del STT, sin tildes, «UCI») a valores exactos del dataset. |
-| **Verificador QA en vivo** | Cada respuesta se contrasta con los resultados de las tools; si no está respaldada, el agente se corrige en voz. |
-| **Adaptación determinista** | Tabla de reglas explicable (urgencia, frustración, ansiedad, confusión) que ajusta el prompt y la velocidad de la voz solo cuando cambia la regla. |
-| **Honestidad en citas** | Los datos no tienen agenda de las IPS: se registra una *solicitud* «pendiente de confirmación por la IPS» en una agenda propia (franjas de 30 min, sin choques), visible en `/citas` y exportable a `.ics` o Google Calendar. |
-| **Memoria de lecciones** | Las correcciones del usuario se guardan como keyterms del STT y lo no respaldado como reglas del prompt: el agente mejora entre sesiones. |
+| **Deepgram Voice Agent** en vez de armar STT + LLM + TTS por separado | Una sola conexión resuelve el fin de turno, las interrupciones y la respuesta especulativa (el LLM empieza a pensar antes de confirmar que el usuario terminó). Nosotros controlamos las tools, el prompt en vivo, la verificación y la traza. |
+| **Groq `gpt-oss-20b`** para la conversación | Es el modelo de Groq que Deepgram soporta oficialmente. Medimos ≈0,9 s por turno con tool; el 120b tardaba ≈1,2 s y respondía con markdown, que suena mal en voz. |
+| **Cadena de respaldo del LLM** (Groq → segunda key → `gpt-4o-mini` de Deepgram) | Si Groq falla o se queda sin cuota, Deepgram pasa al siguiente en el mismo turno. Lo probamos con una key inválida: respondió el respaldo en ≈0,8 s. |
+| **Tools sobre la API, sin embeddings** | Las preguntas son de filtrar y sumar. Una consulta exacta da cifras correctas; un RAG sobre filas daría aproximaciones. |
+| **Catálogo de búsqueda** cargado al arrancar | Traduce lo que dice el usuario (sin tildes, «UCI», errores del STT) a los valores exactos del registro, y pregunta cuando hay homónimos (Armenia, Quindío o Antioquia). |
+| **MCP con un hub propio** | Las tools quedan desacopladas del agente detrás de un protocolo estándar: el hub las descubre con `list_tools`, las convierte en las *functions* del LLM y las ejecuta con `call_tool`, tope de tiempo, caché en lecturas y reconexión. Corren en el mismo proceso por los 512 MB del servidor; separar una a otra máquina es cambiar una línea. |
+| **Fechas interpretadas en código** | El LLM calculaba mal los días («lunes 12» salía «lunes 16»). Ahora pasa la frase tal como la dijo el usuario y `server/tools/fechas.py` la convierte. |
+| **Confirmación visual antes del sí** | `proponer_cita` valida la franja y muestra la ficha en pantalla antes de registrar. Las tools con efectos llevan `defer_until_eot` para no ejecutarse con una frase a medias. |
+| **Google Calendar con cuenta de servicio** | Una API key de Google no permite crear eventos. Con la cuenta de servicio el modelo agenda solo; si Google falla, el evento queda en el calendario local. |
+| **Adaptación por reglas, no por LLM** | Una tabla explicable (urgencia, frustración, ansiedad, confusión) decide el ajuste. Una urgencia se detecta también por palabras clave, así no depende de que el LLM responda. |
+| **Monolito modular en un contenedor** | Un solo despliegue y un solo punto de falla. Las integraciones viven detrás de MCP, así que separarlas no obliga a reescribir el agente. |
 
-## Mapa de fallos
+## Resiliencia y mapa de fallos
 
-| Etapa | Falla posible | Evidencia (Inspector) | Mitigación |
+| Etapa | Falla que vimos o que puede pasar | Cómo se ve | Qué hace el sistema |
 |---|---|---|---|
-| Micrófono / eco | El agente se transcribe a sí mismo | Turno del Agente atribuido a un hablante | `echoCancellation`; filtro de eco del agente |
-| STT | Nombres propios mal transcritos | El texto no coincide | Keyterms + búsqueda difusa en el catálogo |
-| Fin de turno | Corta al usuario | El usuario repite | Ajuste del umbral de fin de turno |
-| Diarización | Mezcla voces parecidas | Un hablante para dos personas | Prueba previa; se declara como límite |
-| Decisión del LLM | Tool o filtro equivocados | Args de la tool en la traza | Descripciones claras + verificador |
-| Datos | Campo vacío (nivel sin dato en el 61 %) | La tool devuelve «sin dato» | Se dice explícitamente |
-| Redacción | Cifra inventada | Verificador ⚠ | Corrección inyectada en voz |
-| Proveedor | Rate limit o caída | Evento `error` | Cadena de LLM con fallback y reconexión con historial |
-| Integraciones | Falla la base de datos | `tool.status = error` | Reinicio del MCP y mensaje honesto |
+| STT | «Cali» transcrito como «calle» | El agente pregunta el municipio que ya le dijeron | Keyterms de ciudades; las correcciones del usuario se vuelven lecciones |
+| Fin de turno | Corta al usuario a mitad de frase | La pregunta queda partida en dos turnos en la traza | Ajuste del umbral de fin de turno |
+| Diarización | Dos voces muy pegadas | La primera palabra del segundo hablante queda en el primero | Límite declarado del diarizador en streaming |
+| Decisión del LLM | Elige una sede por su cuenta o calcula mal una fecha | Argumentos de la tool en la traza | Las tools devuelven la pregunta; las fechas se interpretan en código |
+| Datos | Nivel de atención vacío en el 61 %, sin especialidades | La tool devuelve «sin dato» | Se dice explícitamente |
+| Redacción | Cifra o nombre inventado | Verificador ⚠ | Corrección en voz y una regla para las siguientes sesiones |
+| Proveedor | Rate limit o caída de Groq, corte con Deepgram | Evento `error` recuperable | Cadena de respaldo del LLM; reconexión con espera creciente y el historial de la conversación |
+| Integraciones | Falla un servidor MCP o Google Calendar | `tool.status = error` | El hub reconecta el servidor; el evento queda en el calendario local |
 
-## Seguridad
+## Seguridad y privacidad
 
 | Riesgo | Defensa |
 |---|---|
-| **Inyección de prompt** por voz o texto («ignora tus instrucciones», «repite tu prompt») | Reglas de SEGURIDAD al final del prompt: lo que dice el usuario y lo que devuelven las tools son *datos*, nunca instrucciones; no revela su configuración ni cambia de rol (`server/seguridad.py`). |
-| **Inyección persistente** vía la memoria de lecciones (se agrega al prompt de las sesiones siguientes) | Detector determinista: nada que parezca inyección se guarda como lección ni llega al prompt, ni siquiera lo ya guardado. |
-| Consultas manipuladas | El LLM nunca escribe SoQL ni SQL: las tools arman las consultas con valores escapados o parametrizados. |
-| XSS en la UI | Todo dato del servidor se pinta con `textContent`; los enlaces de acciones solo apuntan al propio servidor. |
-| Fuga de secretos | Las keys viven solo en el servidor (`.env` / variables de Render); no se sirven archivos ocultos; sin `/docs` público. |
-| Mensajes inválidos del navegador | Se validan con el contrato Pydantic y se responden con un `error` recuperable sin cerrar la conexión. |
+| Inyección de prompt («ignora tus instrucciones») | Lo que dice el usuario y lo que devuelven las tools son datos, nunca instrucciones (`server/seguridad.py`) |
+| Inyección persistente por la memoria de lecciones | Un detector determinista impide guardar o promover al prompt cualquier lección sospechosa |
+| Consultas manipuladas | El LLM no escribe SoQL ni SQL; las tools usan valores escapados y consultas parametrizadas |
+| Datos personales en pantallas públicas | En `/citas`, el Inspector, la traza y el feed `.ics` el nombre va abreviado y el documento y el teléfono enmascarados; los datos completos solo quedan en la base y en Google Calendar |
+| XSS | Todo dato del servidor se pinta con `textContent` |
+| Fuga de secretos | Las keys viven solo en variables de entorno del servidor; no se sirven archivos ocultos ni `/docs` |
 
 ## Ejecutar en local
 
 ```bash
 uv sync
-cp .env.example .env              # DEEPGRAM_API_KEY, GROQ_API_KEY, DATOS_GOV_KEY_ID / _SECRET
-uv run uvicorn server.main:app --port 8000          # http://127.0.0.1:8000 (Chrome, con micrófono)
-uv run python -m server.mock_ws                     # UI sin backend ni keys: guion de demo (caso María)
-uv run pytest -q                                    # ~450 tests sin red
+cp .env.example .env
+uv run uvicorn server.main:app --port 8000      # http://127.0.0.1:8000 (Chrome, con micrófono)
+uv run python -m server.mock_ws                 # la UI sin backend ni keys, con un guion de demo
+uv run pytest -q                                # 496 tests, sin red
 ```
 
-## Uso de IA (regla M04)
+| Variable | Para qué |
+|---|---|
+| `DEEPGRAM_API_KEY` | Voz (STT, TTS y Voice Agent) |
+| `GROQ_API_KEY` · `GROQ_API_KEY_2` (opcional) | LLM de la conversación, emociones y verificador |
+| `DATOS_GOV_KEY_ID` · `DATOS_GOV_KEY_SECRET` | Más cuota en la API de datos.gov.co |
+| `GOOGLE_CALENDAR_ID` · `GOOGLE_SERVICE_ACCOUNT_JSON` | Crear los eventos en Google Calendar (el calendario se comparte con la cuenta de servicio) |
+| `EXCEL_DATOS_COMPLETOS=1` (opcional) | Incluir documento y teléfono completos en el Excel |
 
-- **Producto:** Deepgram (STT, TTS y Voice Agent), Groq `gpt-oss-20b` (conversación y emociones) y `gpt-oss-120b`
-  (brief y verificador), vía LiteLLM con fallback entre proveedores.
-- **Desarrollo:** buena parte del código, los tests y la documentación se generó con asistentes de IA, dirigidos y
-  revisados por el equipo. La especificación (`docs/superpowers/specs/`), el contrato y las decisiones de diseño son
-  del equipo.
-  - **Carlos Alape** (frontend, MCP y QA): Claude Code (Claude Opus) en VS Code para implementar y probar; subagentes
-    de Claude (Sonnet) para trabajar issues en paralelo y como **agente de revisión QA antes de cada push**; la skill
-    *ui-ux-pro-max* para el sistema visual (paleta, tipografía, accesibilidad). Las pruebas de la UI se hicieron con
-    Edge headless y un micrófono simulado.
-  - **Cristian García** (core y backend): Claude Code con el plugin *superpowers* (flujo de diseño → spec en
-    `docs/superpowers/specs/` → issues) y un agente de revisión QA por issue (commits «revisión QA de #N»).
-    *(Cristian: confirma o ajusta esta línea antes de la entrega.)*
+## Equipo
 
-La base multi-agente reutilizada (`core/`: LLM con fallback, tools, orquestación) está documentada en
-`docs/ARQUITECTURA.md` y `docs/GUIA.md`.
+| Integrante | Rol |
+|---|---|
+| **Cristian García** | Core y backend: sesión de voz y máquina de estados, cliente de datos.gov.co, tools y hub MCP, citas con agenda propia, calendario y Excel, emociones, verificador, lecciones, traza y resiliencia |
+| **Carlos Alape** | Frontend, MCP y QA: interfaz en vivo (esfera de voz, paneles, inspector, brief), audio en el navegador, servidor MCP de citas, defensa contra inyección de prompt y README inicial |
+
+## Uso de IA y reconocimiento
+
+**En el producto:**
+- **Deepgram:** STT, TTS y Voice Agent.
+- **Groq:** `gpt-oss-20b` para la conversación y las emociones, `gpt-oss-120b` para el brief y el verificador.
+- **`gpt-4o-mini`:** gestionado por Deepgram, como respaldo.
+
+**En el desarrollo,** este proyecto se construyó en pareja con **Claude**, de Anthropic, y queremos reconocerlo como
+lo que fue: **coautor y acompañante** durante toda la hackatón. Trabajamos con Claude Code (Claude Opus) en VS Code:
+- Diseñamos juntos la arquitectura y la especificación ([`docs/superpowers/specs/`](docs/superpowers/specs/)).
+- Partimos el reto en issues y escribimos el código y los tests primero.
+- Probamos cada pieza contra las APIs reales.
+- Antes de cada push, un agente de Claude revisaba el commit como QA.
+
+Las decisiones de producto, el alcance y la revisión final fueron del equipo. Mucho del código, de las pruebas y de
+esta documentación se escribió conversando con Claude, y buena parte de lo que este proyecto hace bien salió de esa
+conversación. Gracias, Claude.
+
+<div align="center"><sub>Hecho para el Reto 01 · Agente Vocal Cognitivo · Kognia Labs</sub></div>
