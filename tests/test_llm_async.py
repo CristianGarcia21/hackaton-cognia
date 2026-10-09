@@ -97,17 +97,22 @@ def test_achat_respeta_el_modelo_pedido_y_pasa_kwargs(monkeypatch):
 
 
 def test_achat_no_bloquea_el_event_loop(monkeypatch):
+    en_vuelo, maximo = 0, 0
+
     async def lento(model, messages, **kwargs):
-        await asyncio.sleep(0.2)
+        nonlocal en_vuelo, maximo
+        en_vuelo += 1
+        maximo = max(maximo, en_vuelo)
+        await asyncio.sleep(0.05)
+        en_vuelo -= 1
         return respuesta("ok")
     monkeypatch.setattr(litellm, "acompletion", lento)
 
     async def dos_a_la_vez():
-        inicio = time.perf_counter()
         await asyncio.gather(llm.achat([{"role": "user", "content": "a"}]),
                              llm.achat([{"role": "user", "content": "b"}]))
-        return time.perf_counter() - inicio
-    assert asyncio.run(dos_a_la_vez()) < 0.35  # en paralelo, no 0.4 s en serie
+    asyncio.run(dos_a_la_vez())
+    assert maximo == 2  # las dos llamadas estuvieron en vuelo a la vez
 
 
 def test_astructured_devuelve_el_modelo_validado(monkeypatch):
@@ -137,3 +142,92 @@ def test_structured_sincrono_sigue_funcionando(monkeypatch):
     monkeypatch.setattr(litellm, "completion",
                         lambda model, messages, **kw: respuesta('{"emocion": "alegria", "sentimiento": 0.9}'))
     assert llm.structured("genial", Emocion).emocion == "alegria"
+
+
+# ---------------------- Revisión QA de #6 ----------------------
+
+@pytest.mark.parametrize("mensaje,segundos", [
+    ("Please retry in 40.6s.", 40.6),                                    # Gemini
+    ("Rate limit reached... Please try again in 1.234s. Visit", 1.234),  # Groq
+    ("Please try again in 2m3.5s.", 123.5),                              # Groq (minutos)
+    ("Please try again in 450ms.", 0.45),                                # Groq (ms)
+    ('"retryDelay": "17s"', 17.0),                                       # Gemini JSON
+    ("cuota agotada sin pista", None),
+])
+def test_segundos_de_espera_del_rate_limit(mensaje, segundos):
+    resultado = llm._retry_seconds(mensaje)
+    assert resultado == pytest.approx(segundos) if segundos is not None else resultado is None
+
+
+def test_rate_limit_de_groq_enfria_solo_lo_que_pide(monkeypatch):
+    def comp(m, kw):
+        if m.startswith("groq"):
+            return litellm.RateLimitError("Please try again in 1.5s.", llm_provider="groq", model=m)
+        return "ok"
+    simular(monkeypatch, comp)
+    asyncio.run(llm.achat([{"role": "user", "content": "hi"}]))
+    assert 0 < llm._cooldown["groq/openai/gpt-oss-120b"] - time.time() <= 1.5
+
+
+def test_total_timeout_corta_la_cadena_completa(monkeypatch):
+    async def colgado(model, messages, **kwargs):
+        await asyncio.sleep(5)
+    monkeypatch.setattr(litellm, "acompletion", colgado)
+    inicio = time.perf_counter()
+    with pytest.raises(TimeoutError):
+        asyncio.run(llm.achat([{"role": "user", "content": "hi"}], total_timeout=0.1))
+    assert time.perf_counter() - inicio < 1
+
+
+def test_astructured_respeta_total_timeout(monkeypatch):
+    async def colgado(model, messages, **kwargs):
+        await asyncio.sleep(5)
+    monkeypatch.setattr(litellm, "acompletion", colgado)
+    with pytest.raises(TimeoutError):
+        asyncio.run(llm.astructured("hola", Emocion, total_timeout=0.1))
+
+
+def test_timeout_de_un_proveedor_pasa_al_siguiente(monkeypatch):
+    def comp(m, kw):
+        return litellm.Timeout("lento", model=m, llm_provider="groq") if m.startswith("groq") else "cohere"
+    simular(monkeypatch, comp)
+    assert asyncio.run(llm.achat([{"role": "user", "content": "hi"}])).choices[0].message.content == "cohere"
+
+
+def test_cancelar_la_tarea_no_pasa_al_siguiente_modelo(monkeypatch):
+    llamadas = []
+
+    async def lento(model, messages, **kwargs):
+        llamadas.append(model)
+        await asyncio.sleep(5)
+    monkeypatch.setattr(litellm, "acompletion", lento)
+
+    async def cancelar():
+        tarea = asyncio.create_task(llm.achat([{"role": "user", "content": "hi"}]))
+        await asyncio.sleep(0.05)
+        tarea.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await tarea
+    asyncio.run(cancelar())
+    assert llamadas == ["groq/openai/gpt-oss-120b"]
+
+
+def test_structured_acepta_temperature_y_kwargs(monkeypatch):
+    llamadas = simular(monkeypatch, lambda m, kw: '{"emocion": "calma", "sentimiento": 0}')
+    asyncio.run(llm.astructured("hola", Emocion, temperature=0.5, timeout=3))
+    assert llamadas[0]["temperature"] == 0.5 and llamadas[0]["timeout"] == 3
+
+
+def test_structured_no_muta_el_prompt_del_llamador(monkeypatch):
+    respuestas = iter(["mal", '{"emocion": "calma", "sentimiento": 0}'])
+    simular(monkeypatch, lambda m, kw: next(respuestas))
+    prompt = [{"role": "user", "content": "hola"}]
+    asyncio.run(llm.astructured(prompt, Emocion))
+    assert prompt == [{"role": "user", "content": "hola"}]
+
+
+def test_sin_candidatos_el_error_lo_explica(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY")
+    monkeypatch.delenv("COHERE_API_KEY")
+    with pytest.raises(RuntimeError, match="Ningún modelo candidato tiene API key"):
+        asyncio.run(llm.achat([{"role": "user", "content": "hi"}]))

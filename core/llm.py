@@ -8,6 +8,7 @@
   el mismo fallback y enfriamiento por rate limit que las síncronas.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -29,11 +30,21 @@ log = logging.getLogger("cognia.llm")
 _cooldown: dict[str, float] = {}
 
 
+def _retry_seconds(message: str) -> float | None:
+    """Segundos de espera que pide el proveedor en un rate limit, o None si no lo dice.
+    Gemini: "retry in 40.6s" / "retryDelay": "40s". Groq: "try again in 1.234s", "2m3.5s", "450ms"."""
+    m = re.search(r"(?:retry|try again) in (?:(\d+)m)?([\d.]+)(ms|s)\b", message)
+    if m:
+        return int(m[1] or 0) * 60 + float(m[2]) / (1000 if m[3] == "ms" else 1)
+    m = re.search(r'"retryDelay":\s*"([\d.]+)s"', message)
+    return float(m[1]) if m else None
+
+
 def _on_failure(model: str, error: Exception) -> str:
-    """Registra el fallo y, si es por cuota, pone el modelo en enfriamiento."""
+    """Registra el fallo y, si es por cuota, pone el modelo en enfriamiento solo lo que pide el proveedor."""
     if isinstance(error, litellm.RateLimitError):
-        wait = re.search(r"retry in ([\d.]+)s", str(error))
-        _cooldown[model] = time.time() + (float(wait.group(1)) if wait else 60)
+        wait = _retry_seconds(str(error))
+        _cooldown[model] = time.time() + (wait if wait is not None else 60)
     summary = f"{model}: {type(error).__name__}: {str(error).splitlines()[0][:150]}"
     log.warning("Falló %s", summary)
     return summary
@@ -58,6 +69,8 @@ def _request(m: str, messages: list[dict], tools: list[dict] | None, temperature
 
 
 def _all_failed(errors: list[str]) -> RuntimeError:
+    if not errors:
+        return RuntimeError("Ningún modelo candidato tiene API key: revisa DEFAULT_MODEL, FALLBACK_MODELS y el .env")
     return RuntimeError("Todos los modelos fallaron:\n" + "\n".join(errors))
 
 
@@ -78,16 +91,20 @@ def chat(messages: list[dict], model: str | None = None, tools: list[dict] | Non
 
 
 async def achat(messages: list[dict], model: str | None = None, tools: list[dict] | None = None,
-                temperature: float = 0.3, **kwargs):
+                temperature: float = 0.3, total_timeout: float | None = None, **kwargs):
     """Versión async de chat(): mismo fallback y enfriamiento, sin bloquear el event loop.
-    Para la voz conviene pasar timeout=<segundos> y así no esperar a un proveedor colgado."""
-    errors = []
-    for m in _candidates(model):
-        try:
-            return await litellm.acompletion(**_request(m, messages, tools, temperature, kwargs))
-        except Exception as e:  # noqa: BLE001 — cualquier fallo pasa al siguiente modelo
-            errors.append(_on_failure(m, e))
-    raise _all_failed(errors)
+
+    timeout=<s> limita cada proveedor; total_timeout=<s> limita la cadena completa de fallback y lanza
+    TimeoutError (en voz usa ambos: p. ej. timeout=2, total_timeout=4). Cancelar la tarea la detiene
+    sin probar más modelos."""
+    async with asyncio.timeout(total_timeout):
+        errors = []
+        for m in _candidates(model):
+            try:
+                return await litellm.acompletion(**_request(m, messages, tools, temperature, kwargs))
+            except Exception as e:  # noqa: BLE001 — cualquier fallo pasa al siguiente modelo
+                errors.append(_on_failure(m, e))
+        raise _all_failed(errors)
 
 
 def ask(prompt: str, system: str | None = None, model: str | None = None, **kwargs) -> str:
@@ -141,9 +158,10 @@ def structured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: s
     en lugar de depender del modo nativo de cada uno.
     """
     messages = _structured_messages(prompt, schema, system)
+    kwargs.setdefault("temperature", 0)
     last_error = None
     for _ in range(retries + 1):
-        text = chat(messages, model=model, temperature=0, **kwargs).choices[0].message.content or ""
+        text = chat(messages, model=model, **kwargs).choices[0].message.content or ""
         try:
             return schema.model_validate_json(_extract_json(text))
         except Exception as e:  # noqa: BLE001
@@ -153,18 +171,22 @@ def structured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: s
 
 
 async def astructured[T: BaseModel](prompt: str | list[dict], schema: type[T], model: str | None = None,
-                                    system: str | None = None, retries: int = 2, **kwargs) -> T:
-    """Versión async de structured() (emociones, verificador, brief en el backend)."""
+                                    system: str | None = None, retries: int = 2,
+                                    total_timeout: float | None = None, **kwargs) -> T:
+    """Versión async de structured() (emociones, verificador, brief en el backend).
+    total_timeout limita TODO (reintentos + fallback) y lanza TimeoutError."""
     messages = _structured_messages(prompt, schema, system)
-    last_error = None
-    for _ in range(retries + 1):
-        text = (await achat(messages, model=model, temperature=0, **kwargs)).choices[0].message.content or ""
-        try:
-            return schema.model_validate_json(_extract_json(text))
-        except Exception as e:  # noqa: BLE001
-            last_error = e
-            messages += _correction(text, e)
-    raise ValueError(f"No se obtuvo JSON válido para {schema.__name__}: {last_error}")
+    kwargs.setdefault("temperature", 0)
+    async with asyncio.timeout(total_timeout):
+        last_error = None
+        for _ in range(retries + 1):
+            text = (await achat(messages, model=model, **kwargs)).choices[0].message.content or ""
+            try:
+                return schema.model_validate_json(_extract_json(text))
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                messages += _correction(text, e)
+        raise ValueError(f"No se obtuvo JSON válido para {schema.__name__}: {last_error}")
 
 
 def embed(texts: list[str], model: str | None = None) -> np.ndarray:
