@@ -449,3 +449,11 @@ def test_grupo_solo_filtra_por_grupo():
 def test_tipo_que_no_existe_en_el_grupo_dicho_pide_aclaracion():
     r = catalogo_realista().resolver_capacidad("camas de urgencias")
     assert r.filtros == [] and not r.exacto and r.sugerencias == ["Urgencias (CONSULTORIOS)"]
+
+
+def test_presupuesto_por_consulta_permite_esperar_mas_fuera_de_la_voz():
+    c = D.ClienteDatosGov(auth=None, http=api(demora=0.4), timeout=0.2)
+    c.presupuesto = 0.3
+    with pytest.raises(D.FuenteNoDisponible):
+        correr(c.consultar("SELECT lento"))
+    assert correr(c.consultar("SELECT lento 2", presupuesto=2)) == [{"q": "SELECT lento 2"}]

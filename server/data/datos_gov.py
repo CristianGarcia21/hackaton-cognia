@@ -41,6 +41,7 @@ DATASET = "s2ru-bqt6"
 SODA3 = f"/api/v3/views/{DATASET}/query.json"
 
 OnStatus = Callable[[ev.SourceStatus], Any] | None
+PRESUPUESTO_ARRANQUE_S = 15.0  # el catálogo se carga fuera del camino de la voz: puede esperar más a la API
 
 
 class FuenteNoDisponible(Exception):
@@ -69,6 +70,13 @@ def patron_like(valor: str) -> str:
     return texto(f"%{limpio}%")
 
 
+def patron_sin_tildes(palabra: str) -> str:
+    """Literal LIKE que acepta la palabra con o sin tildes: cada vocal se vuelve el comodín de UN
+    carácter (_). 'clinica' → '%CL_N_C_%' encuentra 'CLINICA' y 'CLÍNICA'. Se aplica sobre upper(campo)."""
+    base = re.sub(r"[aeiou]", "_", normalizar(re.sub(r"[%_]", " ", str(palabra))).replace(" ", "%"))
+    return texto(f"%{base.upper()}%")
+
+
 def normalizar(valor: Any) -> str:
     """'  Bogotá,  D.C. ' → 'bogota d c'. Para comparar lo que dice el STT con los valores de la API."""
     if valor is None or (isinstance(valor, float) and math.isnan(valor)):
@@ -93,9 +101,10 @@ class ClienteDatosGov:
         self._en_vuelo: dict[str, asyncio.Future] = {}
         self.metricas = {"aciertos": 0, "fallos": 0, "ms_ultima": 0.0}
 
-    async def consultar(self, soql: str, limite: int = 1000) -> list[dict]:
+    async def consultar(self, soql: str, limite: int = 1000, presupuesto: float | None = None) -> list[dict]:
         """Ejecuta una consulta SoQL (con caché). Lanza FuenteNoDisponible o ConsultaInvalida.
-        Devuelve una copia: modificar el resultado no altera la caché."""
+        Devuelve una copia: modificar el resultado no altera la caché. presupuesto (s) reemplaza el tope
+        total por defecto: más largo solo fuera del camino de la voz (p. ej. el catálogo al arrancar)."""
         clave = f"{limite}|{soql}"
         guardado = self._cache.get(clave)
         if guardado and time.monotonic() - guardado[0] < self.ttl:
@@ -106,7 +115,7 @@ class ClienteDatosGov:
         futuro = self._en_vuelo.get(clave)
         if futuro is None:  # nadie la está pidiendo: lanzarla y compartirla con quien llegue después
             self.metricas["fallos"] += 1
-            futuro = asyncio.ensure_future(self._pedir(soql, limite))
+            futuro = asyncio.ensure_future(self._pedir(soql, limite, presupuesto or self.presupuesto))
             self._en_vuelo[clave] = futuro
             futuro.add_done_callback(lambda f, c=clave, n=limite, q=soql: self._al_terminar(c, n, q, f))
         # shield para TODOS: si un solicitante se cancela (interrupción de voz), la consulta sigue y los
@@ -125,21 +134,22 @@ class ClienteDatosGov:
         while len(self._cache) > self.max_cache:
             self._cache.popitem(last=False)
 
-    async def _pedir(self, soql: str, limite: int) -> list[dict]:
+    async def _pedir(self, soql: str, limite: int, presupuesto: float) -> list[dict]:
         try:
-            async with asyncio.timeout(self.presupuesto):
-                return await self._intentos(soql, limite)
+            async with asyncio.timeout(presupuesto):
+                # cada intento puede usar hasta la mitad del presupuesto (dos intentos caben siempre)
+                return await self._intentos(soql, limite, max(self.timeout, presupuesto / 2))
         except TimeoutError:
             raise FuenteNoDisponible("datos.gov.co no responde (tiempo agotado)") from None
 
-    async def _intentos(self, soql: str, limite: int) -> list[dict]:
+    async def _intentos(self, soql: str, limite: int, por_intento: float) -> list[dict]:
         cuerpo = {"query": soql, "includeSynthetic": False, "page": {"pageNumber": 1, "pageSize": limite}}
         ultimo = "sin respuesta"
         intentos = 0
         while intentos < 2:
             inicio = time.perf_counter()
             try:
-                async with asyncio.timeout(self.timeout):
+                async with asyncio.timeout(por_intento):
                     r = await self._http.post(SODA3, json=cuerpo, auth=self.auth)
             except (TimeoutError, httpx.TransportError) as e:
                 intentos += 1
@@ -435,10 +445,12 @@ async def cargar_catalogo(cliente: ClienteDatosGov, on_status: OnStatus = None) 
     await _emitir(on_status, source="datos.gov.co", status="conectando")
     try:
         total, municipios, capacidades = await asyncio.gather(
-            cliente.consultar("SELECT count(*) AS n"),
-            cliente.consultar("SELECT departamento, municipio GROUP BY departamento, municipio", limite=5000),
+            cliente.consultar("SELECT count(*) AS n", presupuesto=PRESUPUESTO_ARRANQUE_S),
+            cliente.consultar("SELECT departamento, municipio GROUP BY departamento, municipio", limite=5000,
+                              presupuesto=PRESUPUESTO_ARRANQUE_S),
             cliente.consultar("SELECT nom_grupo_capacidad, nom_descripcion_capacidad "
-                              "GROUP BY nom_grupo_capacidad, nom_descripcion_capacidad", limite=5000),
+                              "GROUP BY nom_grupo_capacidad, nom_descripcion_capacidad", limite=5000,
+                              presupuesto=PRESUPUESTO_ARRANQUE_S),
         )
     except Exception:
         await _emitir(on_status, source="datos.gov.co", status="error")

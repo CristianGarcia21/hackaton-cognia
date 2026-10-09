@@ -38,7 +38,9 @@ uv run python list_models.py     # modelos vigentes de cada proveedor
 |---|---|
 | Reto actual (voz, MCP, emociones, QA) | `server/`, `mcp_servers/`, `web/`, `qa/`, ver la spec |
 | Retos genéricos con la UI de Streamlit | `agents/reto.py` |
-| Nueva herramienta para los agentes | función con `@tool` en `agents/reto.py` o en `core/tools/<tema>.py` |
+| Nueva tool del reto | `server/tools/<tema>.py` con `@tool` (lógica) + `mcp_servers/<tema>.py` (solo la expone por MCP) |
+| Tool genérica reutilizable | `core/tools/<tema>.py` con `@tool` |
+| Consultar datos.gov.co | `server/data/datos_gov.py` (cliente + caché + resolvedor); nunca descargar el dataset |
 | Nuevo equipo seleccionable en la UI | `agents/<equipo>.py` + registrar en `agents/__init__.py` (`TEAMS`) |
 | Cambiar/agregar modelos o proveedores | `core/config.py` (`PROVIDERS`) o `.env` (`DEFAULT_MODEL`, `FALLBACK_MODELS`) |
 | Extraer datos con estructura (JSON validado) | `llm.structured(texto, MiModeloPydantic)` |

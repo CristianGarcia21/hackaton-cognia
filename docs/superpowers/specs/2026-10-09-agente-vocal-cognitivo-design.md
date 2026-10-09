@@ -133,7 +133,9 @@ server/
     trace.py           traza por turno (spans, tiempos, contexto)
   data/
     datos_gov.py       cliente SODA3 bajo demanda + caché + catálogo/resolvedor de búsqueda
-mcp_servers/
+server/tools/           tools del reto con el contrato @tool de core/tools (la lógica)
+  ips.py               describir_datos, buscar_ips, contar_capacidad, detalle_ips
+mcp_servers/           solo exponen esas tools por MCP (en proceso o stdio), sin lógica
   ips.py · citas.py · excel.py · calendario.py
 web/
   index.html · app.js · audio-worklet.js · styles.css
