@@ -3,6 +3,15 @@
 Esqueleto listo para resolver un reto de agentes de IA. Los modelos, el fallback entre proveedores,
 las herramientas, el RAG, la orquestación y la UI ya funcionan; el día del reto solo editas `agents/reto.py`.
 
+## Documentación
+
+| Documento | Para qué |
+|---|---|
+| [docs/GUIA.md](docs/GUIA.md) | Recetas: dónde tocar para crear agentes, tools, equipos, modos, RAG… |
+| [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Diseño, capas, contratos, flujo y límites |
+| [docs/MCP.md](docs/MCP.md) | Cómo conectar servidores MCP o exponer tus agentes por MCP |
+| [AGENTS.md](AGENTS.md) / `CLAUDE.md` | Contexto para asistentes de IA (Claude Code, Cursor, Copilot...) |
+
 ## Arranque
 
 ```bash
