@@ -24,6 +24,7 @@ def manana_a(hora: str) -> str:
 
 
 SEDE = {"sede_codigo": "7600102870-01", "sede_nombre": "FUNDACION VALLE DEL LILI", "motivo": "cirugía"}
+CONTACTO = {"documento": "1020304050", "telefono": "3001234567"}
 
 
 @pytest.fixture
@@ -32,7 +33,8 @@ def citas(tmp_path):
 
 
 def registrar(citas, paciente="María Gómez", hora="10:00", **extra):
-    return correr(citas.registrar_solicitud_cita(paciente=paciente, fecha_hora=manana_a(hora), **SEDE, **extra))
+    return correr(citas.registrar_solicitud_cita(paciente=paciente, fecha_hora=manana_a(hora), **SEDE,
+                                                 **(CONTACTO | extra)))
 
 
 class GoogleFalso:
@@ -80,7 +82,7 @@ def test_errores_del_calendario_son_texto(citas, tmp_path, sid, mensaje):
 
 
 def test_sin_fecha_exacta_no_hay_evento(citas, tmp_path):
-    correr(citas.registrar_solicitud_cita(paciente="Ana", fecha_preferida="el lunes", **SEDE))
+    correr(citas.registrar_solicitud_cita(paciente="Ana", fecha_preferida="el lunes", **SEDE, **CONTACTO))
     cal = K.HerramientasCalendario(citas, tmp_path / "cal.db", google=None)
     assert "no tiene día y hora" in correr(cal.crear_evento_cita(solicitud_id=1))
 
@@ -88,7 +90,7 @@ def test_sin_fecha_exacta_no_hay_evento(citas, tmp_path):
 def test_excel_una_hoja_por_ips_y_datos_enmascarados(citas):
     registrar(citas, documento="1234567890", telefono="3001234567")
     correr(citas.registrar_solicitud_cita(paciente="Luis", fecha_hora=manana_a("09:00"), sede_codigo="500102104-01",
-                                          sede_nombre="HOSPITAL PABLO TOBON URIBE", motivo="consulta"))
+                                          sede_nombre="HOSPITAL PABLO TOBON URIBE", motivo="consulta", **CONTACTO))
     libro = load_workbook(io.BytesIO(X.construir_excel(citas.solicitudes())))
     assert libro.sheetnames[0] == "Resumen" and len(libro.sheetnames) == 3
     filas = list(libro["FUNDACION VALLE DEL LILI"].values)
@@ -98,10 +100,10 @@ def test_excel_una_hoja_por_ips_y_datos_enmascarados(citas):
 
 
 def test_proponer_cita_valida_sin_registrar(citas):
-    texto = correr(citas.proponer_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE))
+    texto = correr(citas.proponer_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE, **CONTACTO))
     assert texto.startswith("Propuesta lista") and citas.solicitudes() == []
     registrar(citas, paciente="Otro", hora="10:00")
-    ocupada = correr(citas.proponer_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE))
+    ocupada = correr(citas.proponer_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE, **CONTACTO))
     assert ocupada.startswith("Error:") and "ya tiene una solicitud" in ocupada
 
 
@@ -127,7 +129,7 @@ def test_exportar_excel_deja_el_boton_de_descarga():
 def test_excel_de_una_sola_ips_listo_para_enviar(citas):
     registrar(citas)
     correr(citas.registrar_solicitud_cita(paciente="Luis", fecha_hora=manana_a("09:00"), sede_codigo="500102104-01",
-                                          sede_nombre="HOSPITAL PABLO TOBON URIBE", motivo="consulta"))
+                                          sede_nombre="HOSPITAL PABLO TOBON URIBE", motivo="consulta", **CONTACTO))
     libro = load_workbook(io.BytesIO(X.construir_excel(citas.solicitudes(), sede="7600102870-01")))
     assert libro.sheetnames == ["FUNDACION VALLE DEL LILI"]
     filas = list(libro.active.values)

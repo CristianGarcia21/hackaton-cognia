@@ -12,7 +12,8 @@ from server.tools import citas as C
 from test_mcp_hub import con_hub
 
 MARIA = {"paciente": "María Gómez", "sede_codigo": "500102126-01", "motivo": "valoración para cirugía",
-         "fecha_preferida": "el lunes en la mañana", "sede_nombre": "Hospital Pablo Tobón Uribe"}
+         "fecha_preferida": "el lunes en la mañana", "sede_nombre": "Hospital Pablo Tobón Uribe",
+         "documento": "1020304050", "telefono": "3001234567"}
 
 
 def correr(coro):
@@ -30,7 +31,7 @@ def test_registrar_devuelve_id_y_estado_honesto(citas):
     assert "NO es una cita confirmada" in texto
     fila = citas.solicitud(1)
     assert fila["estado"] == C.ESTADO_PENDIENTE and fila["sede_codigo"] == "500102126-01"
-    assert fila["paciente"] == "María Gómez" and fila["telefono"] is None
+    assert fila["paciente"] == "María Gómez" and fila["telefono"] == "3001234567" and fila["documento"] == "1020304050"
 
 
 def test_la_base_se_crea_en_el_primer_uso_y_no_al_instanciar(tmp_path):
@@ -164,15 +165,16 @@ def manana_a(hora: str) -> str:
 
 
 SEDE = {"sede_codigo": "7600102870-01", "sede_nombre": "FUNDACION VALLE DEL LILI", "motivo": "cirugía"}
+CONTACTO = {"documento": "1020304050", "telefono": "3001234567"}
 
 
 def test_la_misma_franja_en_la_misma_sede_esta_ocupada_y_ofrece_libres(citas):
-    assert "registrada" in correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE))
-    texto = correr(citas.registrar_solicitud_cita(paciente="Luis Pérez", fecha_hora=manana_a("10:10"), **SEDE))
+    assert "registrada" in correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE, **CONTACTO))
+    texto = correr(citas.registrar_solicitud_cita(paciente="Luis Pérez", fecha_hora=manana_a("10:10"), **SEDE, **CONTACTO))
     assert texto.startswith("Error:") and "10:00" in texto and "ya tiene una solicitud" in texto
     assert "09:30" in texto and "10:30" in texto  # las libres más cercanas
     otra_sede = correr(citas.registrar_solicitud_cita(paciente="Luis Pérez", fecha_hora=manana_a("10:00"),
-                                                      sede_codigo="500102104-01", motivo="consulta"))
+                                                      sede_codigo="500102104-01", motivo="consulta", **CONTACTO))
     assert "registrada" in otra_sede  # misma hora en otra sede: sí se puede
 
 
@@ -180,12 +182,12 @@ def test_la_misma_franja_en_la_misma_sede_esta_ocupada_y_ofrece_libres(citas):
                                                 ("__manana__T05:00", "entre las 7:00")])
 def test_fecha_hora_invalida_explica_como_corregir(citas, fecha_hora, mensaje):
     fecha_hora = fecha_hora.replace("__manana__", manana_a("10:00")[:10])
-    texto = correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=fecha_hora, **SEDE))
+    texto = correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=fecha_hora, **SEDE, **CONTACTO))
     assert texto.startswith("Error:") and mensaje in texto
 
 
 def test_horarios_ocupados_lista_tomadas_y_libres(citas):
-    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("08:00"), **SEDE))
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("08:00"), **SEDE, **CONTACTO))
     texto = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10]))
     assert "Ocupadas: 08:00" in texto and "no la agenda real" in texto
     libre = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10], hora="a las 3 de la tarde"))
@@ -206,14 +208,14 @@ def test_vista_publica_agrupa_por_sede_y_enmascara(citas):
 
 
 def test_ics_valido_con_estado_pendiente(citas):
-    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE))
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("10:00"), **SEDE, **CONTACTO))
     texto = C.ics(citas.solicitudes()[0])
     assert texto.startswith("BEGIN:VCALENDAR") and "DTSTART;TZID=America/Bogota:" in texto
     assert "pendiente de confirmación por la IPS" in texto and texto.endswith("END:VCALENDAR\r\n")
 
 
 def test_sin_fecha_hora_no_hay_calendario(citas):
-    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_preferida="el lunes", **SEDE))
+    correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_preferida="el lunes", **SEDE, **CONTACTO))
     s = citas.solicitudes()[0]
     assert C.ics(s) is None and C.enlace_google(s) is None
 
@@ -232,4 +234,14 @@ def test_base_vieja_sin_columna_fecha_hora_se_migra(tmp_path):
     con.commit()
     con.close()
     h = C.HerramientasCitas(ruta)
-    assert "registrada" in correr(h.registrar_solicitud_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE))
+    assert "registrada" in correr(h.registrar_solicitud_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE, **CONTACTO))
+
+
+@pytest.mark.parametrize("cambio,mensaje", [({"documento": ""}, "número de documento"),
+                                            ({"telefono": ""}, "teléfono de contacto"),
+                                            ({"documento": "12"}, "no parece válido")])
+def test_documento_y_telefono_son_obligatorios(citas, cambio, mensaje):
+    texto = correr(citas.registrar_solicitud_cita(**(MARIA | cambio)))
+    assert texto.startswith("Error:") and mensaje in texto and citas.solicitudes() == []
+    propuesta = correr(citas.proponer_cita(paciente="Ana", fecha_hora=manana_a("10:00"), **SEDE, **(CONTACTO | cambio)))
+    assert propuesta.startswith("Error:") and mensaje in propuesta

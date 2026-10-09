@@ -80,6 +80,21 @@ def _norm(v: str) -> str:
     return " ".join(sin_tildes.lower().split())
 
 
+def _contacto(documento: str, telefono: str) -> tuple[str, str]:
+    """Documento y teléfono son obligatorios: la IPS los necesita para confirmar la cita."""
+    documento = re.sub(r"[\s.\-]", "", _txt(documento))
+    telefono = _txt(telefono)
+    faltan = [n for n, v in (("el número de documento", documento), ("el teléfono de contacto", telefono)) if not v]
+    if faltan:
+        raise EntradaInvalida(f"falta {' y '.join(faltan)} del paciente: la IPS los necesita para confirmar. "
+                              "Pídeselos al usuario.")
+    if not re.fullmatch(r"[A-Za-z0-9]{5,15}", documento):
+        raise EntradaInvalida(f"el documento '{documento}' no parece válido (5 a 15 dígitos o letras). Confírmalo.")
+    if not 7 <= len(re.sub(r"\D", "", telefono)) <= 13:
+        raise EntradaInvalida(f"el teléfono '{telefono}' no parece válido. Confírmalo con el usuario.")
+    return documento, telefono
+
+
 class HerramientasCitas:
     def __init__(self, ruta: str | Path = RUTA_POR_DEFECTO):
         self.ruta = Path(ruta)
@@ -180,8 +195,8 @@ class HerramientasCitas:
             paciente: nombre completo del paciente
             sede_codigo: id de la sede tal como lo dio buscar_ips o detalle_ips (ej. "500102126-01")
             motivo: motivo de la cita en pocas palabras (ej. "valoración para cirugía")
-            documento: número de documento del paciente, si lo dio
-            telefono: teléfono de contacto, si lo dio
+            documento: número de documento del paciente (obligatorio)
+            telefono: teléfono de contacto del paciente (obligatorio)
             fecha_preferida: fecha u horario que prefiere, en sus palabras (ej. "el lunes en la mañana")
             sede_nombre: nombre de la sede, para mostrarlo en el registro
             fecha_hora: día y hora TAL COMO LOS DIJO el usuario (ej. "el lunes 12 a las 10 y media", "mañana a las 3 de la tarde"); no los conviertas tú, la tool los interpreta. Franjas de 30 min, de lunes a sábado entre 7:00 y 18:00
@@ -192,7 +207,6 @@ class HerramientasCitas:
     def _registrar(self, paciente, sede_codigo, motivo, documento, telefono, fecha_preferida, sede_nombre,
                    fecha_hora="") -> str:
         paciente, sede_codigo, motivo = _txt(paciente), _txt(sede_codigo).replace(" ", ""), _txt(motivo)
-        documento, telefono = _txt(documento), _txt(telefono)
         fecha_preferida, sede_nombre = _txt(fecha_preferida), _txt(sede_nombre)
         faltan = [n for n, v in (("el nombre del paciente", paciente), ("el id de la sede", sede_codigo),
                                  ("el motivo", motivo)) if not v]
@@ -201,8 +215,7 @@ class HerramientasCitas:
         if not SEDE_ID.match(sede_codigo):
             raise EntradaInvalida(f"'{sede_codigo}' no es un id de sede válido. Usa el id que devolvió "
                                   "buscar_ips o detalle_ips (formato 500102126-01); no lo inventes.")
-        if telefono and not 7 <= len(re.sub(r"\D", "", telefono)) <= 13:
-            raise EntradaInvalida(f"el teléfono '{telefono}' no parece válido. Confírmalo con el usuario.")
+        documento, telefono = _contacto(documento, telefono)
         if len(paciente) > 120 or len(motivo) > 300:
             raise EntradaInvalida("el nombre o el motivo son demasiado largos; resúmelos.")
         franja = _franja(fecha_hora) if _txt(fecha_hora) else None
@@ -225,7 +238,7 @@ class HerramientasCitas:
                 "para ponerla en el calendario (sin preguntar).")
 
     async def proponer_cita(self, paciente: str, sede_codigo: str, motivo: str, fecha_hora: str,
-                            sede_nombre: str = "") -> str:
+                            documento: str = "", telefono: str = "", sede_nombre: str = "") -> str:
         """Prepara una solicitud de cita para que el usuario la CONFIRME: valida la fecha y la hora, revisa que la franja esté libre y muestra en pantalla la ficha de la cita. Llámala siempre ANTES de pedirle al usuario el "sí"; si devuelve franjas libres, ofrécelas. No registra nada.
 
         Args:
@@ -233,11 +246,14 @@ class HerramientasCitas:
             sede_codigo: id de la sede tal como lo dio buscar_ips o detalle_ips (ej. "500102126-01")
             motivo: motivo de la cita en pocas palabras
             fecha_hora: día y hora TAL COMO LOS DIJO el usuario (ej. "el lunes 12 a las 10 y media"); la tool los interpreta
+            documento: número de documento del paciente (obligatorio)
+            telefono: teléfono de contacto del paciente (obligatorio)
             sede_nombre: nombre de la sede, para la ficha
         """
-        return await self._seguro(self._proponer, paciente, sede_codigo, motivo, fecha_hora, sede_nombre)
+        return await self._seguro(self._proponer, paciente, sede_codigo, motivo, fecha_hora, sede_nombre,
+                                  documento, telefono)
 
-    def _proponer(self, paciente, sede_codigo, motivo, fecha_hora, sede_nombre) -> str:
+    def _proponer(self, paciente, sede_codigo, motivo, fecha_hora, sede_nombre, documento="", telefono="") -> str:
         paciente, sede_codigo, motivo = _txt(paciente), _txt(sede_codigo).replace(" ", ""), _txt(motivo)
         faltan = [n for n, v in (("el nombre del paciente", paciente), ("el motivo", motivo),
                                  ("el día y la hora", _txt(fecha_hora))) if not v]
@@ -245,6 +261,7 @@ class HerramientasCitas:
             raise EntradaInvalida(f"falta {' y '.join(faltan)}. Pídeselo al usuario.")
         if not SEDE_ID.match(sede_codigo):
             raise EntradaInvalida(f"'{sede_codigo}' no es un id de sede válido; usa el de buscar_ips o detalle_ips.")
+        documento, telefono = _contacto(documento, telefono)
         franja = _franja(fecha_hora)
         with self._conexion() as con:
             tomadas = _tomadas(con, sede_codigo, franja.date())
@@ -255,9 +272,10 @@ class HerramientasCitas:
                 + (f"Franjas libres cercanas: {', '.join(_hora(x) for x in libres)}. Ofrécelas al usuario."
                    if libres else "No quedan franjas libres ese día; ofrece otro día."))
         sede = _txt(sede_nombre) or f"la sede {sede_codigo}"
-        return (f"Propuesta lista (franja libre): {paciente} en {sede}, el {_fecha(franja)} de {franja.year} a las "
-                f"{_hora(franja)}, motivo {motivo}. La ficha ya está en pantalla. Léele estos datos al usuario y "
-                "pregúntale si confirma; con su «sí», llama registrar_solicitud_cita con los mismos datos.")
+        return (f"Propuesta lista (franja libre): {paciente} (documento terminado en {documento[-4:]}, teléfono "
+                f"terminado en {re.sub(r'[^0-9]', '', telefono)[-4:]}) en {sede}, el {_fecha(franja)} de {franja.year} "
+                f"a las {_hora(franja)}, motivo {motivo}. La ficha ya está en pantalla. AÚN NO está reservada ni "
+                "registrada: léele estos datos al usuario y pregúntale si confirma; con su «sí», llama registrar_solicitud_cita con los mismos datos.")
 
     async def horarios_ocupados(self, sede_codigo: str, fecha: str, hora: str = "") -> str:
         """Consulta la agenda de SOLICITUDES ya registradas en una sede para un día y dice si la hora pedida está libre. Úsala cuando el usuario pregunte qué horarios hay; para agendar usa proponer_cita (también revisa la franja).
@@ -345,8 +363,8 @@ class HerramientasCitas:
             dia = _siguiente_habil(date.today() + timedelta(days=int(s.get("en_dias", 1))))
             cuando = f"{dia.isoformat()}T{s['hora']}"
             try:
-                self._registrar(s["paciente"], s["sede_codigo"], s["motivo"], "", "", "", s.get("sede_nombre", ""),
-                                cuando)
+                self._registrar(s["paciente"], s["sede_codigo"], s["motivo"], s.get("documento", "1000000000"),
+                                s.get("telefono", "3000000000"), "", s.get("sede_nombre", ""), cuando)
                 n += 1
             except EntradaInvalida as e:
                 log.warning("Semilla de cita omitida: %s", e)
