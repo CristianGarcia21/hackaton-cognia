@@ -248,7 +248,7 @@ def test_funciones_agente_tienen_el_formato_de_deepgram():
     nombres = [f["name"] for f in funciones]
     assert {"describir_datos", "buscar_ips", "contar_capacidad", "detalle_ips"} <= set(nombres)
     for f in funciones:
-        assert set(f) == {"name", "description", "parameters"}  # sin endpoint: se ejecutan en el backend
+        assert set(f) == {"name", "description", "parameters"}  # sin endpoint ni defer: lecturas del backend
         assert f["parameters"]["type"] == "object"
         assert "title" not in json.dumps(f["parameters"])  # sin ruido que cuesta tokens
     json.dumps(funciones)  # serializable para el mensaje Settings
@@ -369,3 +369,14 @@ def test_hub_la_verificacion_periodica_no_reconecta_una_conexion_sana(caplog):
 
     r = correr(con_hub(prueba, ("contador", mcp, False), ping_s=0.05))
     assert r.texto == "1" and "caído" not in caplog.text and "verificación" not in caplog.text
+
+
+def test_funciones_con_efectos_esperan_el_fin_del_turno():
+    mcp, _ = servidor_contador()
+
+    async def prueba(hub):
+        return {f["name"]: f.get("defer_until_eot") for f in R.funciones_agente(hub)}
+
+    h, _ = herramientas()
+    diferidas = correr(con_hub(prueba, ("ips", servidor_ips.crear_servidor(h), True), ("citas", mcp, False)))
+    assert diferidas["buscar_ips"] is None and diferidas["sumar"] is True

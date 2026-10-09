@@ -31,8 +31,15 @@ def _esperar_listo(c: TestClient) -> None:
     raise AssertionError("el servidor no quedó listo")
 
 
+async def _sin_deepgram(_funciones):
+    """Los tests del servidor nunca abren el Deepgram real (los de la sesión usan uno simulado)."""
+    from server.deepgram_agent import ErrorAgente
+    raise ErrorAgente("Deepgram deshabilitado en los tests")
+
+
 @pytest.fixture
 def client(monkeypatch):
+    monkeypatch.setattr(main, "_abrir_agente", _sin_deepgram)
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
     monkeypatch.setattr(main, "estado", main.Estado())
     componentes.clear()
@@ -102,14 +109,11 @@ def test_ws_mensaje_invalido_devuelve_error_y_sigue_abierto(client):
         error = ev.parse_servidor(ws.receive_text())
         assert isinstance(error, ev.ErrorEvento) and error.where == "cliente" and error.recoverable
         ws.send_text('{"type": "start"}')
-        ws.send_bytes(b"\x00\x00" * 320)  # audio: se acepta sin romper
-        ws.send_text('{"type": "text_input", "text": "hola"}')
-        eco = ev.parse_servidor(ws.receive_text())
-        assert isinstance(eco, ev.AgentText) and eco.turn_id == 1 and "hola" in eco.text
-        estado = ev.parse_servidor(ws.receive_text())
-        assert isinstance(estado, ev.EstadoEvento) and estado.state == "inactivo" and estado.turn_id == 1
-        ws.send_text('{"type": "text_input", "text": "otra"}')
-        assert ev.parse_servidor(ws.receive_text()).turn_id == 2
+        ws.send_bytes(bytes(640))  # audio: se acepta sin romper
+        voz = ev.parse_servidor(ws.receive_text())  # sin Deepgram: error de voz recuperable, la sesión sigue
+        assert isinstance(voz, ev.ErrorEvento) and voz.where == "voz" and voz.recoverable
+        ws.send_text("[]")
+        assert ev.parse_servidor(ws.receive_text()).where == "cliente"
 
 
 def test_ws_error_inesperado_avisa_al_cliente_antes_de_cerrar(client, monkeypatch):
@@ -178,32 +182,22 @@ def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch):
     componentes.clear()
 
 
-def test_difundir_no_se_bloquea_con_un_cliente_colgado(monkeypatch):
+def test_difundir_encola_sin_esperar_a_ningun_navegador(monkeypatch):
     import asyncio
 
-    class Colgado:
-        async def send_text(self, _):
-            await asyncio.sleep(10)
-
-    class Rapido:
+    class SesionFalsa:
         def __init__(self):
             self.recibidos = []
 
-        async def send_text(self, t):
-            self.recibidos.append(t)
+        def emitir(self, e):
+            self.recibidos.append(e)
 
-    rapido = Rapido()
+    a, b = SesionFalsa(), SesionFalsa()
     estado = main.Estado()
-    estado.conexiones = {Colgado(), rapido}
+    estado.conexiones = {a, b}
     monkeypatch.setattr(main, "estado", estado)
-    monkeypatch.setattr(main, "TIMEOUT_DIFUSION_S", 0.05)
-
-    async def correr():
-        inicio = time.perf_counter()
-        await main._difundir(ev.SourceStatus(source="datos.gov.co", status="listo"))
-        return time.perf_counter() - inicio
-    assert asyncio.run(correr()) < 1
-    assert len(rapido.recibidos) == 1
+    asyncio.run(main._difundir(ev.SourceStatus(source="datos.gov.co", status="listo")))
+    assert len(a.recibidos) == len(b.recibidos) == 1
 
 
 # ------------------------------- hub MCP (#9) -------------------------------

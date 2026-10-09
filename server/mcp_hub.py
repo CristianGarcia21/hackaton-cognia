@@ -184,6 +184,11 @@ class HubMCP:
     def listo(self) -> bool:
         return bool(self._servidores) and all(self.estado().values())
 
+    def es_cacheable(self, servidor: str) -> bool:
+        """Lectura pura (sin efectos). Las tools de servidores no cacheables pueden cambiar cosas."""
+        s = self._servidores.get(servidor)
+        return bool(s and s.cacheable)
+
     def tools(self) -> list[ToolMCP]:
         """Tools conocidas (se conservan aunque su servidor esté caído: el agente ya las declaró)."""
         return [t for s in self._servidores.values() for t in s.tools.values()]

@@ -6,9 +6,8 @@
 - GET  /api/ready    READINESS: 200 solo cuando todos los componentes están listos, si no 503
 - WS   /ws/voz       contrato en server/events.py
 
-Al arrancar: catálogo de datos.gov.co (en segundo plano) y hub MCP con las tools (#9). La sesión real
-con Deepgram llega en #10; por ahora el WebSocket responde `ready`, valida los mensajes del cliente y
-contesta `text_input` con un eco.
+Al arrancar: catálogo de datos.gov.co (en segundo plano) y hub MCP con las tools (#9). Cada WebSocket es
+una Sesion (server/session.py, #10) conectada al Deepgram Voice Agent con las tools del hub.
 """
 
 import asyncio
@@ -17,7 +16,7 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,7 +24,9 @@ from server import config
 from server import events as ev
 from server import tools_registry
 from server.data import datos_gov
+from server.deepgram_agent import ConexionAgente, settings
 from server.mcp_hub import HubMCP
+from server.session import Sesion
 from server.tools.ips import HerramientasIPS
 
 log = logging.getLogger("cognia.server")
@@ -33,7 +34,6 @@ log = logging.getLogger("cognia.server")
 # Componente -> listo. Cada subsistema (datos_gov, MCP, brief...) se registra aquí al arrancar.
 componentes: dict[str, bool] = {}
 REINTENTO_DATOS_S = 15.0  # si datos.gov.co no responde al arrancar, se reintenta cada N segundos
-TIMEOUT_DIFUSION_S = 1.0  # un navegador lento no frena la difusión a los demás
 
 
 @dataclass
@@ -46,20 +46,17 @@ class Estado:
     fuente: ev.SourceStatus | None = None  # último estado de la fuente: se envía a cada sesión nueva
     ips: HerramientasIPS | None = None  # tools de IPS: reciben el catálogo cuando termina de cargar
     hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
-    conexiones: set[WebSocket] = field(default_factory=set)
+    conexiones: set[Sesion] = field(default_factory=set)  # sesiones abiertas (para difundir eventos)
 
 
 estado = Estado()
 
 
 async def _difundir(evento) -> None:
-    """Envía un evento a todas las sesiones abiertas, en paralelo y con tiempo límite por sesión
-    (best-effort: una sesión lenta o caída no afecta a las demás ni a quien difunde)."""
-    async def a_una(ws: WebSocket) -> None:
-        with suppress(Exception):
-            await asyncio.wait_for(_enviar(ws, evento), TIMEOUT_DIFUSION_S)
-
-    await asyncio.gather(*(a_una(ws) for ws in list(estado.conexiones)))
+    """Encola un evento en todas las sesiones abiertas. No espera a ningún navegador: cada sesión lo
+    escribe con su propio emisor (T7), así que una sesión lenta no frena a las demás."""
+    for sesion in list(estado.conexiones):
+        sesion.emitir(evento)
 
 
 async def _conectar_datos_gov() -> None:
@@ -133,32 +130,23 @@ async def _enviar(ws: WebSocket, evento) -> None:
     await ws.send_text(ev.to_json(evento))
 
 
+async def _abrir_agente(funciones: list[dict]) -> ConexionAgente:
+    return await ConexionAgente.abrir(config.DEEPGRAM_API_KEY, settings(
+        funciones, groq_key=config.GROQ_API_KEY, modelo=config.VOICE_LLM, voz=config.VOZ))
+
+
 @app.websocket("/ws/voz")
 async def ws_voz(ws: WebSocket) -> None:
     await ws.accept()
     session_id = uuid.uuid4().hex[:12]
     log.info("Sesión %s abierta", session_id)
-    turno = 0
+    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente)
+    iniciales = [ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"])]
+    if estado.fuente is not None:
+        iniciales.append(estado.fuente)
+    estado.conexiones.add(sesion)  # antes de correr: así no se pierde un "listo" que llegue ahora
     try:
-        await _enviar(ws, ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"]))
-        estado.conexiones.add(ws)  # antes de enviar el estado: así no se pierde un "listo" que llegue ahora
-        if estado.fuente is not None:
-            await _enviar(ws, estado.fuente)
-        while True:
-            mensaje = await ws.receive()
-            if mensaje["type"] == "websocket.disconnect":
-                break
-            if mensaje.get("bytes") is not None:
-                continue  # audio del micrófono: lo consumirá la sesión de voz (#10)
-            recibido = ev.parse_cliente_seguro(mensaje.get("text") or "")
-            if isinstance(recibido, ev.ErrorEvento):
-                await _enviar(ws, recibido)
-            elif isinstance(recibido, ev.TextInput):
-                turno += 1
-                await _enviar(ws, ev.AgentText(turn_id=turno, text=f"(esqueleto) Recibí: {recibido.text}"))
-                await _enviar(ws, ev.EstadoEvento(state=ev.EstadoConversacion.INACTIVO, turn_id=turno))
-    except WebSocketDisconnect:
-        pass
+        await sesion.correr(iniciales)
     except Exception:  # noqa: BLE001 — avisar a la UI en vez de cerrar en silencio con 1011
         log.exception("Error en la sesión %s", session_id)
         try:
@@ -168,7 +156,7 @@ async def ws_voz(ws: WebSocket) -> None:
         except Exception:  # noqa: BLE001 — el socket ya puede estar cerrado
             pass
     finally:
-        estado.conexiones.discard(ws)
+        estado.conexiones.discard(sesion)
         log.info("Sesión %s cerrada", session_id)
 
 

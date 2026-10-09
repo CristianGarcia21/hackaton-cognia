@@ -28,9 +28,18 @@ def registrar_servidores(hub: HubMCP, ips: HerramientasIPS) -> None:
 
 
 def funciones_agente(hub: HubMCP) -> list[dict]:
-    """`agent.think.functions` para el mensaje Settings del Voice Agent."""
-    return [{"name": t.nombre, "description": t.descripcion, "parameters": _limpiar(t.esquema)}
-            for t in hub.tools()]
+    """`agent.think.functions` para el mensaje Settings del Voice Agent.
+
+    Deepgram pide las tools ANTES de confirmar que el usuario terminó de hablar (respuesta especulativa):
+    ahorra latencia en las lecturas, pero una tool con efectos (registrar una cita) podría ejecutarse por
+    una frase a medias. Por eso las de servidores no cacheables llevan `defer_until_eot`."""
+    funciones = []
+    for t in hub.tools():
+        f = {"name": t.nombre, "description": t.descripcion, "parameters": _limpiar(t.esquema)}
+        if not hub.es_cacheable(t.servidor):
+            f["defer_until_eot"] = True
+        funciones.append(f)
+    return funciones
 
 
 def _limpiar(esquema):
