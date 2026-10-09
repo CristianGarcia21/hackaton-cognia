@@ -67,6 +67,15 @@
         <li class="vacio">Pulsa «Activar micrófono» y habla. La conversación aparecerá aquí.</li>
       </ol>
       <button id="ir-al-final" class="ir-al-final" type="button" hidden>Ir a lo más reciente ↓</button>
+      <!-- Plan B si falla la voz (#20): envía text_input y la respuesta sale en los mismos paneles. -->
+      <form id="texto-respaldo" class="texto-respaldo" autocomplete="off">
+        <label for="texto-entrada">Escribir al agente</label>
+        <div class="texto-fila">
+          <input id="texto-entrada" type="text" maxlength="2000" placeholder="Escribe tu pregunta" disabled>
+          <button id="texto-enviar" class="boton-enviar" type="submit" disabled>Enviar</button>
+        </div>
+        <p id="texto-aviso" class="texto-aviso" role="status" hidden></p>
+      </form>
     </section>
 
     <aside class="columna-derecha">
@@ -93,7 +102,7 @@
   </main>
 
   <details id="inspector" class="inspector">
-    <summary>Inspector <span class="tenue">· traza de cada turno</span></summary>
+    <summary>Inspector <span id="inspector-resumen" class="tenue">· traza de cada turno</span></summary>
     <div id="inspector-contenido"><p class="tenue">Las trazas de los turnos aparecerán aquí.</p></div>
   </details>
 </body>

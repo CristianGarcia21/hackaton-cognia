@@ -44,3 +44,13 @@ def test_el_servidor_sirve_la_ui():
         assert html.status_code == 200 and 'src="inicio.js"' in html.text and 'href="styles.css"' in html.text
         assert "javascript" in client.get("/app.js").headers["content-type"]
         assert client.get("/styles.css").headers["content-type"].startswith("text/css")
+
+
+def test_index_tiene_la_caja_de_texto_de_respaldo_y_el_resumen_del_inspector():
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert '<form id="texto-respaldo"' in html
+    assert '<label for="texto-entrada">' in html
+    assert re.search(r'<input id="texto-entrada"[^>]*maxlength="2000"', html)
+    # El formulario va fuera del <details> del inspector: debe verse siempre.
+    assert html.index('id="texto-respaldo"') < html.index('<details id="inspector"')
+    assert 'id="inspector-resumen"' in html

@@ -163,7 +163,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .segmento-texto { margin: 0; color: var(--texto); }
 .segmento.parcial .segmento-texto { color: var(--tenue); font-style: italic; }
 .ir-al-final {
-  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); min-height: 44px; padding: 0 16px;
+  position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); min-height: 44px; padding: 0 16px;
   border: none; border-radius: 999px; background: var(--texto); color: #fff; box-shadow: var(--sombra);
 }
 
@@ -231,7 +231,46 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 /* ---------------- Inspector ---------------- */
 .inspector { margin: 0 24px 24px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: var(--radio); }
 .inspector summary { padding: 12px 16px; cursor: pointer; font-family: var(--fuente-titulos); font-weight: 600; min-height: 44px; }
-#inspector-contenido { padding: 0 16px 16px; }
+#inspector-contenido { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.turno { border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; background: var(--fondo); }
+.turno-cabecera { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.turno-titulo { margin: 0; font: 600 1rem var(--fuente-titulos); }
+.turno-total { font-variant-numeric: tabular-nums; font-weight: 600; }
+.turno-pregunta { margin: 6px 0 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.turno-tools { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tool { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--borde); border-left: 4px solid var(--estado-tool); background: var(--tarjeta); }
+.tool-linea { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 0.9rem; }
+.tool-nombre { font-weight: 700; color: var(--estado-tool); }
+.tool-estado { font-weight: 600; font-size: 0.8rem; }
+.tool-estado[data-estado="running"] { color: var(--estado-pensando); }
+.tool-estado[data-estado="ok"] { color: var(--estado-escuchando); }
+.tool-estado[data-estado="error"], .tool-estado[data-estado="timeout"], .tool-estado[data-estado="cancelled"] { color: var(--peligro); }
+.tool-ms { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tool-args, .tool-resultado { margin: 2px 0 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.cascada { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.cascada-etiqueta { display: flex; justify-content: space-between; gap: 12px; font-size: 0.85rem; }
+.cascada-stage { font-weight: 600; overflow-wrap: anywhere; }
+.cascada-ms { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cascada-pista { height: 10px; border-radius: 999px; background: var(--borde); overflow: hidden; }
+.cascada-barra { height: 100%; border-radius: 999px; background: var(--primario); min-width: 3px; }
+.cascada-barra.es-tool { background: var(--estado-tool); }
+.cascada-detalle { margin: 2px 0 0; font-size: 0.8rem; overflow-wrap: anywhere; }
+.turno-contexto { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 10px 0 0; font-size: 0.85rem; }
+.turno-contexto dt { color: var(--tenue); }
+.turno-contexto dd { margin: 0; overflow-wrap: anywhere; }
+
+/* ---------------- Caja de texto de respaldo (inspector.js) ---------------- */
+.texto-respaldo { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.texto-respaldo label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--texto-suave); margin-bottom: 4px; }
+.texto-fila { display: flex; gap: 8px; }
+.texto-fila input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; font: inherit; color: var(--texto);
+  border: 1px solid var(--tenue); border-radius: 10px; background: var(--tarjeta);
+}
+.texto-fila input:disabled { background: var(--fondo); }
+.boton-enviar { min-height: 44px; padding: 0 20px; border: none; border-radius: 10px; background: var(--primario-fuerte); color: #fff; font-weight: 600; }
+.boton-enviar:hover:not(:disabled) { background: #155e75; }
+.texto-aviso { margin: 6px 0 0; font-size: 0.85rem; font-weight: 600; color: var(--peligro); }
 
 /* ---------------- Responsivo ---------------- */
 @media (max-width: 900px) {

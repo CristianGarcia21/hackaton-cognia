@@ -8,5 +8,6 @@ import "./microfono.js";
 import "./captura.js";
 import "./reproductor.js";
 import "./paneles.js";
+import "./inspector.js";
 
 iniciar();
