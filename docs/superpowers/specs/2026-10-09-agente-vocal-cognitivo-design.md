@@ -416,7 +416,9 @@ permite el micrófono".
 ## 14. Despliegue
 - **Railway** (o similar con Docker, WebSockets y sin suspensión): un contenedor `python:3.12-slim` con
   uv, `uvicorn server.main:app --workers 1`, HTTPS (el navegador exige HTTPS para el micrófono).
-- Healthcheck en `/api/health`, que responde OK solo cuando el dataset, los MCP y el brief están listos.
+- `/api/health` es **liveness**: responde 200 mientras el proceso vive (cuerpo `ok` o `degradado`) y es el
+  healthcheck de Railway, así un componente lento no impide el deploy. `/api/ready` es **readiness**: 200 solo
+  cuando el dataset, los MCP y el brief están listos. Smoke test de cualquier URL: `uv run python scripts/smoke.py <url>`.
 - **Desplegar un "hola mundo" en la primera media hora** y luego en cada avance.
 - Variables de entorno: `DEEPGRAM_API_KEY`, `GROQ_API_KEY`, `GROQ_API_KEY_2` (opcional),
   `GEMINI_API_KEY`, `SODA_APP_TOKEN`, `CALENDAR_BACKEND=local|google`, `GOOGLE_SERVICE_ACCOUNT_JSON`

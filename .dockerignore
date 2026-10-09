@@ -1,16 +1,19 @@
-# Secretos: NUNCA dentro de la imagen (las keys van como variables de entorno en Railway)
-.env
-.env.*
+# Secretos: NUNCA dentro de la imagen, en NINGUNA carpeta (las keys van como variables en Railway).
+# Ojo: en .dockerignore un patrón sin **/ solo aplica a la raíz.
+**/.env
+**/.env.*
 !.env.example
-*.pem
-*.key
-secrets*.json
-credentials*.json
-service-account*.json
+**/*.pem
+**/*.key
+**/secrets*.json
+**/credentials*.json
+**/service-account*.json
+.streamlit/secrets.toml
 
-# Entornos y cachés locales
+# Entornos, dependencias de frontend y cachés locales
 .venv
 .venv-*
+**/node_modules
 **/__pycache__
 **/*.pyc
 .pytest_cache
@@ -19,6 +22,7 @@ service-account*.json
 # Datos generados y cosas que no necesita el servidor
 outputs
 data/uploads
+data/kb
 .git
 .github
 .claude
