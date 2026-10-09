@@ -131,9 +131,10 @@ async def _enviar(ws: WebSocket, evento) -> None:
     await ws.send_text(ev.to_json(evento))
 
 
-async def _abrir_agente(funciones: list[dict]) -> ConexionAgente:
+async def _abrir_agente(funciones: list[dict], historial: list[dict] | None = None) -> ConexionAgente:
     return await ConexionAgente.abrir(config.DEEPGRAM_API_KEY, settings(
-        funciones, groq_key=config.GROQ_API_KEY, modelo=config.VOICE_LLM, voz=config.VOZ))
+        funciones, groq_key=config.GROQ_API_KEY, groq_key_2=config.GROQ_API_KEY_2, modelo=config.VOICE_LLM,
+        voz=config.VOZ, historial=historial))
 
 
 async def _abrir_stt() -> ConexionSTT:

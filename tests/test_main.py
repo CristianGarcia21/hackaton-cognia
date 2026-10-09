@@ -31,7 +31,7 @@ def _esperar_listo(c: TestClient) -> None:
     raise AssertionError("el servidor no quedó listo")
 
 
-async def _sin_deepgram(_funciones):
+async def _sin_deepgram(_funciones, _historial=None):
     """Los tests del servidor nunca abren el Deepgram real (los de la sesión usan uno simulado)."""
     from server.deepgram_agent import ErrorAgente
     raise ErrorAgente("Deepgram deshabilitado en los tests")

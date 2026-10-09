@@ -122,7 +122,7 @@ async def con_sesion(prueba, agente=None, falla: Exception | None = None):
     agente = agente or AgenteFalso()
     abiertos = []
 
-    async def abrir(funciones):
+    async def abrir(funciones, historial=None):
         if falla:
             raise falla
         abiertos.append(funciones)
@@ -253,15 +253,19 @@ def test_si_deepgram_no_abre_avisa_y_la_sesion_sigue():
     assert cliente.where == "cliente"
 
 
-def test_si_deepgram_cierra_avisa_y_se_puede_reconectar():
+def test_si_deepgram_se_corta_reconecta_solo_con_el_historial(monkeypatch):
+    monkeypatch.setattr(S, "ESPERA_RECONEXION_S", 0.01)
     primero, segundo = AgenteFalso(), AgenteFalso()
-    agentes = [primero, segundo]
+    agentes, historiales = [primero, segundo], []
 
-    async def prueba(ws, sesion, _):
+    async def prueba(ws, sesion):
         ws.texto({"type": "start"})
         await esperar(lambda: sesion.agente is primero)
-        await primero.cerrar()
-        await esperar(lambda: ws.de_tipo(ev.ErrorEvento))
+        primero.empujar({"type": "History", "role": "user", "content": "Me llamo Ana",
+                         "conversational_behavior": "default"})
+        await esperar(lambda: sesion._historial)
+        await primero.cerrar()  # Deepgram corta la conexión
+        await esperar(lambda: sesion.agente is segundo)
         ws.texto({"type": "text_input", "text": "sigo aquí"})
         await esperar(lambda: ("inactivo", 1) in ws.estados())
 
@@ -269,14 +273,15 @@ def test_si_deepgram_cierra_avisa_y_se_puede_reconectar():
         hub = hub_de_prueba()
         await hub.iniciar()
 
-        async def abrir(_):
+        async def abrir(_, historial=None):
+            historiales.append(historial)
             return agentes.pop(0)
 
         ws = WSFalso()
         sesion = S.Sesion(ws, "s1", hub, abrir)
         tarea = asyncio.create_task(sesion.correr([]))
         try:
-            await prueba(ws, sesion, None)
+            await prueba(ws, sesion)
         finally:
             ws.cerrar()
             await asyncio.wait_for(tarea, 3)
@@ -284,7 +289,46 @@ def test_si_deepgram_cierra_avisa_y_se_puede_reconectar():
         return ws
 
     ws = correr(correr_con_dos())
-    assert "Se cerró" in ws.de_tipo(ev.ErrorEvento)[0].message
+    assert historiales == [[], [{"type": "History", "role": "user", "content": "Me llamo Ana"}]]
+    assert "reconectando" in ws.de_tipo(ev.ErrorEvento)[0].message
+    assert segundo.tipos_enviados()[0] == "InjectUserMessage"
+
+
+def test_si_no_logra_reconectar_lo_dice_y_se_rinde(monkeypatch):
+    monkeypatch.setattr(S, "ESPERA_RECONEXION_S", 0.001)
+    primero = AgenteFalso()
+    llamadas = []
+
+    async def prueba(ws, sesion):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.agente is primero)
+        primero.empujar({"type": "History", "role": "user", "content": "hola"})
+        await esperar(lambda: sesion._historial)
+        await primero.cerrar()
+        await esperar(lambda: any("No pude reconectar" in e.message for e in ws.de_tipo(ev.ErrorEvento)))
+
+    async def correr_sin_red():
+        hub = hub_de_prueba()
+        await hub.iniciar()
+
+        async def abrir(_, historial=None):
+            llamadas.append(1)
+            if len(llamadas) == 1:
+                return primero
+            raise ErrorAgente("sin red")
+
+        ws = WSFalso()
+        sesion = S.Sesion(ws, "s1", hub, abrir)
+        tarea = asyncio.create_task(sesion.correr([]))
+        try:
+            await prueba(ws, sesion)
+        finally:
+            ws.cerrar()
+            await asyncio.wait_for(tarea, 3)
+            await hub.cerrar()
+
+    correr(correr_sin_red())
+    assert len(llamadas) == 1 + S.MAX_RECONEXIONES
 
 
 def test_un_evento_raro_de_deepgram_no_corta_la_sesion():
@@ -431,7 +475,7 @@ async def con_stt(prueba, stt, falla=None):
     await hub.iniciar()
     agente = AgenteFalso()
 
-    async def abrir(_):
+    async def abrir(_, historial=None):
         return agente
 
     async def abrir_stt():
@@ -712,3 +756,26 @@ def test_spans_de_tiempos_de_deepgram_y_del_backend():
     spans = {s.stage: s.ms for s in t.spans()}
     assert spans == {"fin_turno": 250, "llm_decide": 300, "tool:buscar_ips": 120, "llm_redacta": 400,
                      "primer_audio": 1200}
+
+
+# ------------------------------- resiliencia: Settings (#21) -------------------------------
+
+from server import deepgram_agent as DA  # noqa: E402
+
+
+def test_settings_cadena_de_llm_groq_segunda_key_y_respaldo_de_deepgram():
+    s = DA.settings([{"name": "f"}], groq_key="k1", groq_key_2="k2")
+    cadena = s["agent"]["think"]
+    assert [c["provider"]["type"] for c in cadena] == ["groq", "groq", "open_ai"]
+    assert cadena[1]["endpoint"]["headers"]["authorization"] == "Bearer k2"
+    assert all(c["prompt"] == DA.PROMPT and c["functions"] == [{"name": "f"}] for c in cadena)
+    assert "endpoint" not in cadena[2]  # gestionado por Deepgram: sin keys nuestras
+    solo = DA.settings([], groq_key="k1", respaldo=False)["agent"]["think"]
+    assert isinstance(solo, dict) and solo["provider"]["type"] == "groq"
+
+
+def test_settings_con_historial_no_saluda_y_lleva_el_contexto():
+    h = [{"type": "History", "role": "user", "content": "hola"}]
+    agente = DA.settings([], groq_key="k", historial=h)["agent"]
+    assert agente["context"] == {"messages": h} and "greeting" not in agente
+    assert "greeting" in DA.settings([], groq_key="k")["agent"]

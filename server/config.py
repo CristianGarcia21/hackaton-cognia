@@ -26,4 +26,5 @@ DATOS_GOV_AUTH: tuple[str, str] | None = (_kid, _ksecret) if _kid and _ksecret e
 # pero la voz responde con un error claro.
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2", "")  # opcional: 2.ª cuenta de Groq en la cadena de respaldo
 VOICE_LLM = os.getenv("VOICE_LLM", "openai/gpt-oss-20b")  # el único de Groq que Deepgram lista; ≈0,9 s por turno

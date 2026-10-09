@@ -40,6 +40,10 @@ log = logging.getLogger("cognia.session")
 E = ev.EstadoConversacion
 MAX_AUDIO_EN_COLA = 50  # ~1-2 s de micrófono: si Deepgram se atrasa, se descarta lo más viejo
 KEEPALIVE_S = 5.0       # sin audio (micrófono apagado o modo texto) Deepgram cierra tras ~10 s
+ESPERA_RECONEXION_S = 0.5  # reconexión con Deepgram: 0.5, 1, 2, 4, 8 s
+MAX_RECONEXIONES = 5
+CONEXION_ESTABLE_S = 10.0   # una conexión que duró más que esto reinicia la cuenta de fallos
+MAX_HISTORIAL = 40          # mensajes History que se reenvían al reconectar
 MAX_AUDIO_PENDIENTE = 480_000  # ~10 s de TTS (PCM16 24 kHz): si el navegador va más lento, se descarta
 
 
@@ -55,10 +59,10 @@ class _Audio:
 
 class Sesion:
     def __init__(self, ws: WebSocket, session_id: str, hub: HubMCP,
-                 abrir_agente: Callable[[list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None,
+                 abrir_agente: Callable[[list[dict], list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None,
                  voz: str = "aura-2-celeste-es"):
         self.ws, self.session_id, self.hub = ws, session_id, hub
-        self._abrir_agente = abrir_agente  # funciones -> ConexionAgente (inyectable en tests)
+        self._abrir_agente = abrir_agente  # (funciones, historial) -> ConexionAgente (inyectable en tests)
         self._abrir_stt = abrir_stt  # () -> ConexionSTT con diarización; None = sin panel diarizado
         self.stt = None
         self._audio_stt: asyncio.Queue[bytes] = asyncio.Queue(MAX_AUDIO_EN_COLA)
@@ -86,6 +90,7 @@ class Sesion:
         self._tg: asyncio.TaskGroup | None = None
         self._tarea_agente: asyncio.Task | None = None
         self._listo = asyncio.Event()  # la conexión con Deepgram terminó de abrirse (bien o mal)
+        self._historial: deque[dict] = deque(maxlen=MAX_HISTORIAL)  # History de Deepgram, para reconectar
         self._tools: dict[str, asyncio.Task] = {}
         self._segmentos = 0
 
@@ -242,20 +247,55 @@ class Sesion:
         self._tarea(esperar_y_enviar(self._listo), "T2-inyectar")
 
     async def _agente(self) -> None:
+        """Mantiene la conexión con Deepgram. Si se corta a mitad de la conversación, reconecta con espera
+        creciente y le pasa el historial (agent.context): el usuario sigue donde iba (spec §10.2)."""
+        fallos, espera = 0, ESPERA_RECONEXION_S
+        while True:
+            inicio = asyncio.get_running_loop().time()
+            if await self._conectar_agente():
+                await self._conversar()
+                if asyncio.get_running_loop().time() - inicio > CONEXION_ESTABLE_S:
+                    fallos, espera = 0, ESPERA_RECONEXION_S  # venía estable: no cuenta como fallo seguido
+                else:
+                    fallos += 1
+            elif not self._historial:
+                return  # nunca hubo conversación: el error ya se mostró; se reintenta con el próximo gesto
+            else:
+                fallos += 1
+            if fallos > MAX_RECONEXIONES:
+                self.emitir(ev.ErrorEvento(where="voz", message="No pude reconectar la voz; vuelve a activar el "
+                                           "micrófono o escribe para intentarlo de nuevo", recoverable=True))
+                return
+            log.warning("Sesión %s: conexión con Deepgram cortada; reconecto en %.1fs", self.session_id, espera)
+            self.emitir(ev.ErrorEvento(where="voz", message="Se cortó la conexión de voz; reconectando…",
+                                       recoverable=True))
+            await asyncio.sleep(espera)
+            espera = min(espera * 2, 8.0)
+
+    async def _conectar_agente(self) -> bool:
+        reconexion = bool(self._historial)
         try:
-            self.agente = await self._abrir_agente(tools_registry.funciones_agente(self.hub))
+            self.agente = await self._abrir_agente(tools_registry.funciones_agente(self.hub), list(self._historial))
         except ErrorAgente as e:
             log.warning("Sesión %s sin voz: %s", self.session_id, e)
-            self.emitir(ev.ErrorEvento(where="voz", message=f"La voz no está disponible: {e}", recoverable=True))
-            return
+            if not reconexion:
+                self.emitir(ev.ErrorEvento(where="voz", message=f"La voz no está disponible: {e}", recoverable=True))
+            return False
         except Exception:  # noqa: BLE001 — un bug al preparar la sesión: avisar en vez de quedar mudo
             log.exception("Sesión %s: error abriendo Deepgram", self.session_id)
             self.emitir(ev.ErrorEvento(where="voz", message="La voz no está disponible por un error interno",
                                        recoverable=True))
-            return
+            return False
         finally:
             self._listo.set()  # lo pendiente se envía o, si no hay agente, se descarta
-        log.info("Sesión %s conectada a Deepgram (%s)", self.session_id, self.agente.request_id)
+        log.info("Sesión %s conectada a Deepgram (%s)%s", self.session_id, self.agente.request_id,
+                 " con historial" if reconexion else "")
+        if reconexion:
+            self.emitir(ev.EstadoEvento(state=self.maquina.estado, turn_id=self.maquina.turn_id))
+        return True
+
+    async def _conversar(self) -> None:
+        """Atiende la conexión abierta hasta que Deepgram la cierre."""
         envio = self._tarea(self._enviar_audio(), "T2-audio")
         try:
             async for m in self.agente:
@@ -266,8 +306,6 @@ class Sesion:
                         self._evento_del_agente(m)
                 except Exception:  # noqa: BLE001 — un evento raro no corta la conversación
                     log.exception("Evento de Deepgram no procesado: %.200s", m if isinstance(m, dict) else "audio")
-            self.emitir(ev.ErrorEvento(where="voz", message="Se cerró la conexión de voz; vuelve a activar "
-                                       "el micrófono o escribe para reconectar", recoverable=True))
         finally:
             envio.cancel()
             await self.agente.cerrar()
@@ -334,8 +372,12 @@ class Sesion:
             log.warning("Deepgram Error en %s: %s", self.session_id, d)
             self.emitir(ev.ErrorEvento(where="voz", message=f"Deepgram: {d.get('description') or d.get('code')}",
                                        recoverable=True))
+        elif tipo == "History":
+            self._historial.append({k: v for k, v in d.items() if k != "conversational_behavior"})
         elif tipo == "Warning":
-            log.info("Deepgram Warning en %s: %s", self.session_id, d)
+            log.info("Deepgram Warning en %s: %s", self.session_id, str(d)[:200])
+            if "think provider" in str(d.get("description", "")) and (tr := self._traza_actual()) is not None:
+                tr.contexto["llm_respaldo"] = True  # Groq falló: respondió el siguiente proveedor de la cadena
 
     def _texto(self, rol: str, texto: str) -> None:
         if not texto:

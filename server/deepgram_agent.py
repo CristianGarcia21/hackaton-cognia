@@ -60,20 +60,39 @@ ESTILO (todo se convierte a voz): máximo tres frases por respuesta, en un solo 
 KEYTERMS = ["REPS", "Kognia", "datos.gov.co", *deepgram_stt.KEYTERMS]
 
 
+# Respaldo gestionado por Deepgram (no usa keys nuestras): si Groq falla o da rate limit, Deepgram pasa al
+# siguiente de la cadena EN EL MISMO TURNO (verificado: ≈0,6 s extra, la llamada no se corta).
+RESPALDO_LLM = {"type": "open_ai", "model": "gpt-4o-mini"}
+
+
 def settings(funciones: list[dict], *, groq_key: str, modelo: str = "openai/gpt-oss-20b",
              voz: str = "aura-2-celeste-es", prompt: str = PROMPT, saludo: str | None = SALUDO,
-             keyterms: list[str] | None = None, temperatura: float = 0.3) -> dict:
+             keyterms: list[str] | None = None, temperatura: float = 0.3, groq_key_2: str = "",
+             respaldo: bool = True, historial: list[dict] | None = None) -> dict:
     """Mensaje Settings del Voice Agent. Audio: entra PCM16 16 kHz y sale PCM16 24 kHz sin contenedor
-    (los mismos formatos del contrato del navegador, server/events.py: AUDIO_ENTRADA / AUDIO_SALIDA)."""
+    (los mismos formatos del contrato del navegador, server/events.py: AUDIO_ENTRADA / AUDIO_SALIDA).
+
+    `think` es una cadena de proveedores (fallback por turno): Groq → Groq con la 2.ª key (si hay) →
+    gpt-4o-mini gestionado por Deepgram. `historial` (mensajes History) se usa al reconectar: el agente
+    sigue la conversación donde iba y no repite el saludo."""
+    def groq(key: str) -> dict:
+        return {"provider": {"type": "groq", "model": modelo, "temperature": temperatura},
+                "endpoint": {"url": GROQ_URL, "headers": {"authorization": f"Bearer {key}"}},
+                "prompt": prompt, "functions": funciones}
+
+    cadena = [groq(groq_key)] + ([groq(groq_key_2)] if groq_key_2 else [])
+    if respaldo:
+        cadena.append({"provider": {**RESPALDO_LLM, "temperature": temperatura}, "prompt": prompt,
+                       "functions": funciones})
     agente: dict = {
         "listen": {"provider": {"type": "deepgram", "model": "nova-3", "language": "es",
                                 "keyterms": keyterms if keyterms is not None else KEYTERMS}},
-        "think": {"provider": {"type": "groq", "model": modelo, "temperature": temperatura},
-                  "endpoint": {"url": GROQ_URL, "headers": {"authorization": f"Bearer {groq_key}"}},
-                  "prompt": prompt, "functions": funciones},
+        "think": cadena if len(cadena) > 1 else cadena[0],
         "speak": {"provider": {"type": "deepgram", "model": voz}},
     }
-    if saludo:
+    if historial:
+        agente["context"] = {"messages": historial}
+    elif saludo:
         agente["greeting"] = saludo
     return {"type": "Settings",
             "audio": {"input": {"encoding": "linear16", "sample_rate": 16000},
