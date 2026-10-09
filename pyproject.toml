@@ -22,6 +22,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-timeout>=2.4.0",
 ]
 ui = [
     "streamlit>=1.65.0",
@@ -30,6 +31,7 @@ ui = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+timeout = 60  # pytest-timeout: un test de WebSocket que se queda esperando falla en vez de colgar
 
 [tool.uv]
 default-groups = ["dev", "ui"]
