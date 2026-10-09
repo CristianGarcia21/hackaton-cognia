@@ -259,16 +259,17 @@ class HerramientasCitas:
                 f"{_hora(franja)}, motivo {motivo}. La ficha ya está en pantalla. Léele estos datos al usuario y "
                 "pregúntale si confirma; con su «sí», llama registrar_solicitud_cita con los mismos datos.")
 
-    async def horarios_ocupados(self, sede_codigo: str, fecha: str) -> str:
-        """Consulta la agenda de SOLICITUDES ya registradas en una sede para un día: qué franjas están tomadas y cuáles libres. Úsala antes de proponer una hora o cuando el usuario pregunte qué horarios hay.
+    async def horarios_ocupados(self, sede_codigo: str, fecha: str, hora: str = "") -> str:
+        """Consulta la agenda de SOLICITUDES ya registradas en una sede para un día y dice si la hora pedida está libre. Úsala cuando el usuario pregunte qué horarios hay; para agendar usa proponer_cita (también revisa la franja).
 
         Args:
             sede_codigo: id de la sede tal como lo dio buscar_ips o detalle_ips (ej. "500102126-01")
             fecha: día TAL COMO LO DIJO el usuario (ej. "el lunes 12", "mañana", "15 de octubre"); la tool lo interpreta
+            hora: hora que pidió el usuario, en sus palabras (ej. "a las 3 de la tarde"), si la dijo
         """
-        return await self._seguro(self._horarios, sede_codigo, fecha)
+        return await self._seguro(self._horarios, sede_codigo, fecha, hora)
 
-    def _horarios(self, sede_codigo, fecha) -> str:
+    def _horarios(self, sede_codigo, fecha, hora="") -> str:
         sede_codigo = _txt(sede_codigo).replace(" ", "")
         if not SEDE_ID.match(sede_codigo):
             raise EntradaInvalida(f"'{sede_codigo}' no es un id de sede válido; usa el de buscar_ips o detalle_ips.")
@@ -279,12 +280,30 @@ class HerramientasCitas:
         with self._conexion() as con:
             tomadas = _tomadas(con, sede_codigo, dia)
         inicio = datetime.combine(dia, datetime.min.time()).replace(hour=HORA_APERTURA)
-        libres = _libres(tomadas, inicio, maximo=6)
-        ocupadas = ", ".join(_hora(t) for t in sorted(tomadas)) or "ninguna"
-        return (f"Agenda de solicitudes de la sede {sede_codigo} el {_fecha(inicio)} de {inicio.year} "
-                f"(usa ESTA fecha al confirmar): ocupadas {ocupadas}. "
-                + (f"Primeras libres: {', '.join(_hora(x) for x in libres)}." if libres else "No quedan franjas libres.")
-                + " Son solicitudes registradas aquí, no la agenda real de la IPS.")
+        partes = [f"Agenda de solicitudes de la sede {sede_codigo} el {_fecha(inicio)} de {inicio.year} "
+                  f"(usa ESTA fecha al confirmar)."]
+        if _txt(hora):
+            try:
+                h, m = fechas.interpretar_hora(_txt(hora) if "las" in _txt(hora) else f"a las {_txt(hora)}")
+                pedida = inicio.replace(hour=h, minute=m - m % FRANJA_MIN)
+                if not HORA_APERTURA <= pedida.hour < HORA_CIERRE or pedida.weekday() == 6:
+                    partes.append(f"La hora {_hora(pedida)} está fuera del horario (lunes a sábado, "
+                                  f"{HORA_APERTURA}:00 a {HORA_CIERRE}:00).")
+                elif pedida in tomadas:
+                    libres = _libres(tomadas, pedida)
+                    partes.append(f"La franja {_hora(pedida)} está OCUPADA. Libres cercanas: "
+                                  f"{', '.join(_hora(x) for x in libres) or 'ninguna'}.")
+                else:
+                    partes.append(f"La franja {_hora(pedida)} está LIBRE.")
+            except fechas.FechaNoEntendida:
+                pass
+        if not tomadas:
+            partes.append(f"No hay franjas ocupadas: todas están libres de {HORA_APERTURA}:00 a {HORA_CIERRE}:00.")
+        else:
+            partes.append(f"Ocupadas: {', '.join(_hora(t) for t in sorted(tomadas))}; el resto, de "
+                          f"{HORA_APERTURA}:00 a {HORA_CIERRE}:00, está libre.")
+        partes.append("Son solicitudes registradas aquí, no la agenda real de la IPS.")
+        return " ".join(partes)
 
     async def listar_solicitudes(self, paciente: str = "") -> str:
         """Lista las solicitudes de cita registradas (las más recientes primero), con su estado. Úsala cuando el usuario pregunte por sus solicitudes o quiera confirmar qué quedó registrado.

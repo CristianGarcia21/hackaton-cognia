@@ -215,8 +215,9 @@ class HerramientasCalendario:
         inicio = datetime.fromisoformat(evento["inicio"])
         return (f"{'Evento creado' if nuevo else 'El evento ya existía'} {donde} para la solicitud #{s['id']}: "
                 f"{_fecha(inicio)} a las {_hora(inicio)} en {evento['sede']}, titulado «{TITULO}». "
-                "Díselo al usuario en una frase; recuerda que la IPS debe confirmar."
-                + (f" Enlace: {evento['google_link']}" if evento.get("google_link") else ""))
+                "Díselo al usuario en una frase; recuerda que la IPS debe confirmar. NO leas ni menciones "
+                "enlaces: la ficha en pantalla ya tiene el botón."
+                + (f" [solo para la pantalla: {evento['google_link']}]" if evento.get("google_link") else ""))
 
     def tools(self) -> list[Tool]:
         return [tool(self.crear_evento_cita)]

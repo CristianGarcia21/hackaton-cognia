@@ -14,7 +14,7 @@ from server import events as ev
 from server.tools import citas as C
 
 _NUMERO = re.compile(r"#(\d+)")
-_ENLACE = re.compile(r"https://\S+")
+_ENLACE = re.compile(r"https://[^\s\]]+")
 DIAS_CORTOS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
 MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 

@@ -187,7 +187,11 @@ def test_fecha_hora_invalida_explica_como_corregir(citas, fecha_hora, mensaje):
 def test_horarios_ocupados_lista_tomadas_y_libres(citas):
     correr(citas.registrar_solicitud_cita(paciente="Ana Ruiz", fecha_hora=manana_a("08:00"), **SEDE))
     texto = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10]))
-    assert "ocupadas 08:00" in texto and "07:00" in texto and "no la agenda real" in texto
+    assert "Ocupadas: 08:00" in texto and "no la agenda real" in texto
+    libre = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10], hora="a las 3 de la tarde"))
+    assert "15:00 está LIBRE" in libre
+    ocupada = correr(citas.horarios_ocupados(sede_codigo=SEDE["sede_codigo"], fecha=manana_a("08:00")[:10], hora="8"))
+    assert "08:00 está OCUPADA" in ocupada
 
 
 def test_vista_publica_agrupa_por_sede_y_enmascara(citas):
