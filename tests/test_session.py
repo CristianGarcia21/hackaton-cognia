@@ -598,3 +598,72 @@ def test_una_emocion_lenta_no_frena_la_respuesta(monkeypatch):
 
     ws, _, _ = correr(con_sesion(prueba))
     assert not ws.de_tipo(ev.Emotion)
+
+
+# ------------------------------- verificador (#15) -------------------------------
+
+from server.cognition import verifier as VER  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _verificador_sin_llm(monkeypatch):
+    async def nada(turno):
+        return None
+    monkeypatch.setattr(S.verifier, "verificar", nada)
+
+
+def test_al_terminar_la_respuesta_se_verifica_contra_las_tools(monkeypatch):
+    vistos = []
+
+    async def verificar(turno):
+        vistos.append(turno)
+        return VER.Veredicto(estado="respaldado")
+    monkeypatch.setattr(S.verifier, "verificar", verificar)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "¿hospitales en Medellín?"})
+        await esperar(lambda: ws.de_tipo(ev.Verification))
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    t = vistos[0]
+    assert t.pregunta == "¿hospitales en Medellín?" and t.respuesta == "Encontré 3 sedes."
+    assert [(x.nombre, x.resultado) for x in t.tools] == [("buscar_ips", "Encontré 3 sedes en Medellín.")]
+    v = ws.de_tipo(ev.Verification)[0]
+    assert (v.turn_id, v.status) == (1, "respaldado")
+    assert "InjectAgentMessage" not in agente.tipos_enviados()
+
+
+def test_no_respaldado_con_correccion_se_corrige_en_voz(monkeypatch):
+    async def verificar(turno):
+        return VER.Veredicto(estado="no_respaldado", problemas=["3 no coincide"], correccion="Son 4 sedes.")
+    monkeypatch.setattr(S.verifier, "verificar", verificar)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "¿hospitales?"})
+        await esperar(lambda: "InjectAgentMessage" in agente.tipos_enviados())
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    inyectado = [m for m in agente.enviados if m["type"] == "InjectAgentMessage"][0]
+    assert inyectado["message"] == "Corrijo lo anterior: Son 4 sedes."
+    assert ws.de_tipo(ev.Verification)[0].correction == "Son 4 sedes."
+
+
+def test_una_interrupcion_cancela_la_verificacion(monkeypatch):
+    empezo = asyncio.Event()
+
+    async def lenta(turno):
+        empezo.set()
+        await asyncio.sleep(5)
+        return VER.Veredicto(estado="no_respaldado", correccion="x")
+    monkeypatch.setattr(S.verifier, "verificar", lenta)
+
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "¿hospitales?"})
+        await asyncio.wait_for(empezo.wait(), 3)
+        agente.empujar(b"\x01\x00" * 10)  # el agente vuelve a hablar...
+        await esperar(lambda: sesion.maquina.estado is E.HABLANDO)
+        agente.empujar({"type": "UserStartedSpeaking"})  # ...y el usuario lo interrumpe
+        await esperar(lambda: sesion._verificador.done())
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    assert not ws.de_tipo(ev.Verification) and "InjectAgentMessage" not in agente.tipos_enviados()

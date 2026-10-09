@@ -5,6 +5,7 @@
     T3 STT        WebSocket con Deepgram Listen (diarize): transcripción por hablante para el panel (#11)
     T4 tools      una tarea por FunctionCallRequest → hub MCP → FunctionCallResponse (cancelable)
     T5 emociones  por turno del usuario: emoción → política de adaptación → UpdatePrompt/UpdateSpeak (#13)
+    T6 verificador al terminar cada respuesta: ¿está respaldada por las tools? → verification (+ corrección) (#15)
     T7 emisor     ÚNICA tarea que escribe en el WebSocket del navegador (cola de salida)
 
 El agente de Deepgram se abre con el primer `start` o `text_input` (gesto del usuario: el navegador deja
@@ -27,6 +28,7 @@ from server import events as ev
 from server import tools_registry
 from server.deepgram_agent import ErrorAgente
 from server.cognition import emotions
+from server.cognition import verifier
 from server.cognition.adaptation import Politica
 from server.deepgram_stt import ErrorSTT, segmentos
 from server.mcp_hub import HubMCP
@@ -67,6 +69,10 @@ class Sesion:
         self.politica = Politica(voz)
         self.analizar_emocion = emotions.analizar  # inyectable en tests
         self._ultimo_hablante = "Hablante 1"  # del STT diarizado: a quién atribuir la emoción
+        self.verificar = verifier.verificar  # inyectable en tests
+        self._turnos: dict[int, verifier.Turno] = {}  # pregunta, tools y respuesta por turno (para T6)
+        self._verificados: set[int] = set()
+        self._verificador: asyncio.Task | None = None
         self.maquina = Maquina()
         self.agente = None
         self.microfono = False
@@ -308,6 +314,7 @@ class Sesion:
             self._cambio(self.maquina.aplicar(Evento.TOOL_CANCELADA))
         elif tipo == "AgentAudioDone":
             self._cambio(self.maquina.aplicar(Evento.AUDIO_TERMINADO))
+            self._lanzar_verificador()
         elif tipo == "LatencyReport":
             self.latencias.update({k: v for k, v in d.items() if k != "type"})
         elif tipo == "Error":
@@ -325,6 +332,8 @@ class Sesion:
         if rol == "user":
             self._cambio(self.maquina.aplicar(Evento.USUARIO_TERMINA))
             self._tarea(self._emocion(texto, turno), "T5-emocion")  # en paralelo: nunca frena la respuesta
+            t = self._turno(turno)
+            t.pregunta = f"{t.pregunta} {texto}".strip()
             # Por voz, el panel lo llena el STT diarizado; si no está (o fue texto escrito), este texto.
             if self.stt is None or self._textos_pendientes > 0:
                 self._textos_pendientes = max(0, self._textos_pendientes - 1)
@@ -335,6 +344,9 @@ class Sesion:
                 turno -= 1  # texto del turno interrumpido: se muestra en su turno, no cambia el estado
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
             self._dichos_agente.append(texto)
+            if turno not in self._verificados:  # una corrección inyectada no se vuelve a verificar
+                t = self._turno(turno)
+                t.respuesta = f"{t.respuesta} {texto}".strip()
             self.emitir(ev.AgentText(turn_id=turno, text=texto))
             self.emitir(ev.Transcript(segment_id=f"a-{self._segmentos}", turn_id=turno, speaker="Agente",
                                       text=texto, is_final=True))
@@ -343,6 +355,8 @@ class Sesion:
         if cambio is None:
             return
         if cambio.interrumpido:
+            if self._verificador is not None:  # el turno quedó a medias: no se verifica ni se corrige
+                self._verificador.cancel()
             # Barge-in: la UI vacía su búfer YA; T7 descarta el audio del turno viejo que aún esté en cola.
             self.emitir(ev.EstadoEvento(state=E.INTERRUMPIDO, turn_id=cambio.turn_id - 1))
             self.emitir(ev.AudioFlush(turn_id=cambio.turn_id - 1))
@@ -364,6 +378,37 @@ class Sesion:
             for m in cambio.mensajes:
                 await self.agente.enviar(m)
         self.emitir(cambio.evento)
+
+    # ------------------------------- T6 verificador -------------------------------
+
+    def _turno(self, n: int) -> verifier.Turno:
+        if n not in self._turnos:
+            self._turnos[n] = verifier.Turno()
+            for viejo in [k for k in self._turnos if k < n - 5]:  # solo los últimos turnos
+                del self._turnos[viejo]
+        return self._turnos[n]
+
+    def _lanzar_verificador(self) -> None:
+        n = self.maquina.turn_id
+        t = self._turnos.get(n)
+        if n < 1 or t is None or not t.respuesta or n in self._verificados:
+            return
+        self._verificados.add(n)
+        copia = verifier.Turno(t.pregunta, list(t.tools), t.respuesta)
+        self._verificador = self._tarea(self._verificar(n, copia), "T6-verificador")
+
+    async def _verificar(self, n: int, turno: verifier.Turno) -> None:
+        v = await self.verificar(turno)
+        if v is None:
+            return
+        self.emitir(ev.Verification(turn_id=n, status=v.estado, issues=v.problemas, correction=v.correccion))
+        if v.estado != "no_respaldado" or not v.correccion:
+            return
+        log.info("Sesión %s: turno %s no respaldado (%s)", self.session_id, n, v.problemas)
+        # Solo si nadie habla y seguimos en ese turno: corregir encima de otra conversación confunde más.
+        if self.agente is not None and self.maquina.estado is E.INACTIVO and self.maquina.turn_id == n:
+            await self.agente.enviar({"type": "InjectAgentMessage", "behavior": "default",
+                                      "message": f"Corrijo lo anterior: {v.correccion}"})
 
     # ------------------------------- T4 tools -------------------------------
 
@@ -390,6 +435,7 @@ class Sesion:
             r = await tools_registry.despachar(self.hub, nombre, argumentos)
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status=r.status, ms=r.ms,
                                     summary=tools_registry.resumen(r.texto)))
+            self._turno(turno).tools.append(verifier.ResultadoTool(nombre, args, r.texto))
             if self.agente is not None:
                 await self.agente.enviar({"type": "FunctionCallResponse", "id": fid, "name": nombre,
                                           "content": r.texto})
