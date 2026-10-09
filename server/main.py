@@ -26,6 +26,8 @@ from server import events as ev
 from server import tools_registry
 from server.cognition import brief as brief_fuente
 from server.data import datos_gov
+from server import deepgram_agent, deepgram_stt
+from server.cognition.lessons import Lecciones
 from server.deepgram_agent import ConexionAgente, settings
 from server.deepgram_stt import ConexionSTT
 from server.mcp_hub import HubMCP
@@ -50,6 +52,7 @@ class Estado:
     fuente: ev.SourceStatus | None = None  # último estado de la fuente: se envía a cada sesión nueva
     ips: HerramientasIPS | None = None  # tools de IPS: reciben el catálogo cuando termina de cargar
     hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
+    lecciones: Lecciones = field(default_factory=Lecciones)  # memoria entre sesiones (#23)
     conexiones: set[Sesion] = field(default_factory=set)  # sesiones abiertas (para difundir eventos)
     brief: ev.Brief | None = None  # caché: se calcula una vez al arrancar y se envía a cada sesión (#12)
     saludo: str | None = None  # versión hablada del brief para el greeting del Voice Agent
@@ -167,11 +170,13 @@ async def _abrir_agente(funciones: list[dict], historial: list[dict] | None = No
     extra = {"saludo": estado.saludo} if estado.saludo else {}  # saludo del brief (#12); sin brief, el de por defecto
     return await ConexionAgente.abrir(config.DEEPGRAM_API_KEY, settings(
         funciones, groq_key=config.GROQ_API_KEY, groq_key_2=config.GROQ_API_KEY_2, modelo=config.VOICE_LLM,
-        voz=config.VOZ, historial=historial, **extra))
+        voz=config.VOZ, historial=historial, prompt=deepgram_agent.PROMPT + estado.lecciones.para_prompt(),
+        keyterms=deepgram_agent.KEYTERMS + estado.lecciones.keyterms(), **extra))
 
 
 async def _abrir_stt() -> ConexionSTT:
-    return await ConexionSTT.abrir(config.DEEPGRAM_API_KEY)
+    return await ConexionSTT.abrir(config.DEEPGRAM_API_KEY,
+                                   deepgram_stt.url(deepgram_stt.KEYTERMS + estado.lecciones.keyterms()))
 
 
 @app.websocket("/ws/voz")
@@ -179,13 +184,15 @@ async def ws_voz(ws: WebSocket) -> None:
     await ws.accept()
     session_id = uuid.uuid4().hex[:12]
     log.info("Sesión %s abierta", session_id)
-    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente, _abrir_stt, voz=config.VOZ)
+    sesion = Sesion(ws, session_id, estado.hub, _abrir_agente, _abrir_stt, voz=config.VOZ,
+                    lecciones=estado.lecciones)
     sesion.modelo_llm = config.VOICE_LLM
     iniciales = [ev.Ready(session_id=session_id, voice=config.VOZ, sources=["datos.gov.co"])]
     if estado.fuente is not None:
         iniciales.append(estado.fuente)
     if estado.brief is not None:
         iniciales.append(estado.brief)
+    iniciales += estado.lecciones.eventos()  # lo aprendido en sesiones anteriores, para el panel
     estado.conexiones.add(sesion)  # antes de correr: así no se pierde un "listo" que llegue ahora
     try:
         await sesion.correr(iniciales)

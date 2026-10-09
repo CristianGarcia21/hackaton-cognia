@@ -65,6 +65,12 @@ KEYTERMS = ["REPS", "Kognia", "datos.gov.co", *deepgram_stt.KEYTERMS]
 RESPALDO_LLM = {"type": "open_ai", "model": "gpt-4o-mini"}
 
 
+def listen(keyterms: list[str]) -> dict:
+    """Configuración de escucha (Settings y UpdateListen, cuando se aprende un keyterm a mitad de sesión)."""
+    return {"provider": {"type": "deepgram", "model": "nova-3", "language": "es",
+                         "keyterms": list(dict.fromkeys(keyterms))}}
+
+
 def settings(funciones: list[dict], *, groq_key: str, modelo: str = "openai/gpt-oss-20b",
              voz: str = "aura-2-celeste-es", prompt: str = PROMPT, saludo: str | None = SALUDO,
              keyterms: list[str] | None = None, temperatura: float = 0.3, groq_key_2: str = "",
@@ -85,8 +91,7 @@ def settings(funciones: list[dict], *, groq_key: str, modelo: str = "openai/gpt-
         cadena.append({"provider": {**RESPALDO_LLM, "temperature": temperatura}, "prompt": prompt,
                        "functions": funciones})
     agente: dict = {
-        "listen": {"provider": {"type": "deepgram", "model": "nova-3", "language": "es",
-                                "keyterms": keyterms if keyterms is not None else KEYTERMS}},
+        "listen": listen(keyterms if keyterms is not None else KEYTERMS),
         "think": cadena if len(cadena) > 1 else cadena[0],
         "speak": {"provider": {"type": "deepgram", "model": voz}},
     }

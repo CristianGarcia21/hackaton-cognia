@@ -814,3 +814,41 @@ def test_un_texto_escrito_durante_la_reconexion_espera_y_se_envia(monkeypatch):
             await hub.cerrar()
 
     correr(correr_con_dos())
+
+
+# ------------------------------- lecciones (#23) -------------------------------
+
+from server.cognition import lessons as LEC  # noqa: E402
+
+
+def test_una_correccion_del_usuario_se_aprende_y_actualiza_la_escucha(tmp_path):
+    lecciones = LEC.Lecciones(tmp_path / "l.db")
+
+    async def prueba(ws, sesion, agente):
+        sesion.lecciones = lecciones
+        ws.texto({"type": "text_input", "text": "No, dije Tuluá"})
+        await esperar(lambda: ws.de_tipo(ev.Lesson) and "UpdateListen" in agente.tipos_enviados())
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    leccion = ws.de_tipo(ev.Lesson)[0]
+    assert (leccion.kind, leccion.content, leccion.origin) == ("keyterm", "Tuluá", "corrección del usuario")
+    listen = next(m for m in agente.enviados if m["type"] == "UpdateListen")["listen"]["provider"]
+    assert "Tuluá" in listen["keyterms"] and listen["language"] == "es"
+    assert lecciones.keyterms() == ["Tuluá"]
+
+
+def test_lo_no_respaldado_queda_como_regla(monkeypatch, tmp_path):
+    lecciones = LEC.Lecciones(tmp_path / "l.db")
+
+    async def malo(turno):
+        return VER.Veredicto(estado="no_respaldado", problemas=["la cifra 720 no está en los datos"])
+    monkeypatch.setattr(S.verifier, "verificar", malo)
+
+    async def prueba(ws, sesion, agente):
+        sesion.lecciones = lecciones
+        ws.texto({"type": "text_input", "text": "¿camas?"})
+        await esperar(lambda: ws.de_tipo(ev.Lesson))
+
+    ws, agente, _ = correr(con_sesion(prueba))
+    assert ws.de_tipo(ev.Lesson)[0].kind == "regla" and "720" in lecciones.para_prompt()
+    assert any(m["type"] == "UpdatePrompt" and "LECCIÓN APRENDIDA" in m["prompt"] for m in agente.enviados)

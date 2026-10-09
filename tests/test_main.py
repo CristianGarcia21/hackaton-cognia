@@ -56,12 +56,13 @@ async def _sin_stt():
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "_abrir_agente", _sin_deepgram)
     monkeypatch.setattr(main, "_abrir_stt", _sin_stt)
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", _catalogo_falso)
     monkeypatch.setattr(main.brief_fuente, "generar", _brief_falso)
-    monkeypatch.setattr(main, "estado", main.Estado())
+    from server.cognition.lessons import Lecciones
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
     componentes.clear()
     with TestClient(app) as c:
         _esperar_listo(c)
@@ -169,7 +170,7 @@ def test_ws_envia_el_estado_de_la_fuente_al_conectar(client):
         assert isinstance(fuente, ev.SourceStatus) and fuente.status == "listo" and fuente.rows == 41427
 
 
-def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch):
+def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch, tmp_path):
     intentos = []
 
     async def falla(cliente, on_status=None):
@@ -177,7 +178,8 @@ def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch
         raise datos_gov.FuenteNoDisponible("datos.gov.co no responde (HTTP 503)")
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", falla)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.05)
-    monkeypatch.setattr(main, "estado", main.Estado())
+    from server.cognition.lessons import Lecciones
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.3)
@@ -188,7 +190,7 @@ def test_si_datos_gov_no_responde_el_servidor_sigue_vivo_y_reintenta(monkeypatch
     componentes.clear()
 
 
-def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch):
+def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch, tmp_path):
     intentos = []
 
     async def bug(cliente, on_status=None):
@@ -196,7 +198,8 @@ def test_un_bug_en_el_catalogo_no_se_reintenta_para_siempre(monkeypatch):
         raise KeyError("n")
     monkeypatch.setattr(main.datos_gov, "cargar_catalogo", bug)
     monkeypatch.setattr(main, "REINTENTO_DATOS_S", 0.02)
-    monkeypatch.setattr(main, "estado", main.Estado())
+    from server.cognition.lessons import Lecciones
+    monkeypatch.setattr(main, "estado", main.Estado(lecciones=Lecciones(tmp_path / "lecciones.db")))
     componentes.clear()
     with TestClient(app) as c:
         time.sleep(0.2)

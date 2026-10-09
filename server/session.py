@@ -31,6 +31,9 @@ from server.cognition import emotions
 from server.cognition import verifier
 from server.cognition.trace import Traza, ahora
 from server.cognition.adaptation import Politica
+from server.cognition.lessons import Lecciones, correcciones
+from server.deepgram_agent import KEYTERMS as KEYTERMS_AGENTE
+from server.deepgram_agent import listen as config_listen
 from server.deepgram_stt import ErrorSTT, segmentos
 from server.mcp_hub import HubMCP
 from server.states import Cambio, Evento, Maquina
@@ -60,7 +63,7 @@ class _Audio:
 class Sesion:
     def __init__(self, ws: WebSocket, session_id: str, hub: HubMCP,
                  abrir_agente: Callable[[list[dict], list[dict]], Awaitable], abrir_stt: Callable[[], Awaitable] | None = None,
-                 voz: str = "aura-2-celeste-es"):
+                 voz: str = "aura-2-celeste-es", lecciones: Lecciones | None = None):
         self.ws, self.session_id, self.hub = ws, session_id, hub
         self._abrir_agente = abrir_agente  # (funciones, historial) -> ConexionAgente (inyectable en tests)
         self._abrir_stt = abrir_stt  # () -> ConexionSTT con diarización; None = sin panel diarizado
@@ -75,6 +78,7 @@ class Sesion:
         self.analizar_emocion = emotions.analizar  # inyectable en tests
         self._ultimo_hablante = "Hablante 1"  # del STT diarizado: a quién atribuir la emoción
         self.verificar = verifier.verificar  # inyectable en tests
+        self.lecciones = lecciones  # memoria entre sesiones (#23); None = no aprende
         self._turnos: dict[int, verifier.Turno] = {}  # pregunta, tools y respuesta por turno (para T6)
         self._verificados: set[int] = set()
         self._verificador: asyncio.Task | None = None
@@ -395,6 +399,8 @@ class Sesion:
             if turno >= 1:
                 self._traza(turno).pendientes.add("emocion")
             self._tarea(self._emocion(texto, turno), "T5-emocion")  # en paralelo: nunca frena la respuesta
+            if self.lecciones is not None and (nombres := correcciones(texto)):
+                self._tarea(self._aprender_keyterms(nombres), "lecciones")
             t = self._turno(turno)
             t.pregunta = f"{t.pregunta} {texto}".strip()
             if turno >= 1:
@@ -521,6 +527,8 @@ class Sesion:
         if v is None:
             return
         self.emitir(ev.Verification(turn_id=n, status=v.estado, issues=v.problemas, correction=v.correccion))
+        if v.estado == "no_respaldado" and v.problemas and self.lecciones is not None:
+            await self._aprender_regla(v.problemas[0])
         if v.estado != "no_respaldado" or not v.correccion:
             return
         log.info("Sesión %s: turno %s no respaldado (%s)", self.session_id, n, v.problemas)
@@ -528,6 +536,25 @@ class Sesion:
         if self.agente is not None and self.maquina.estado is E.INACTIVO and self.maquina.turn_id == n:
             await self.agente.enviar({"type": "InjectAgentMessage", "behavior": "default",
                                       "message": f"Corrijo lo anterior: {v.correccion}"})
+
+    # ------------------------------- lecciones (#23) -------------------------------
+
+    async def _aprender_keyterms(self, nombres: list[str]) -> None:
+        """El usuario corrigió un nombre: el STT debe reconocerlo mejor desde ya y en las próximas sesiones."""
+        nuevas = [e for n in nombres if (e := await self.lecciones.agregar("keyterm", n, "corrección del usuario"))]
+        for e in nuevas:
+            self.emitir(e)
+        if nuevas and self.agente is not None:
+            await self.agente.enviar({"type": "UpdateListen",
+                                      "listen": config_listen(KEYTERMS_AGENTE + self.lecciones.keyterms())})
+
+    async def _aprender_regla(self, problema: str) -> None:
+        regla = (f"Ya se dijo un dato no respaldado ({problema.rstrip('.')}); di solo cifras y nombres que estén "
+                 "en el resultado de la tool.")
+        if (e := await self.lecciones.agregar("regla", regla, "verificador")) is not None:
+            self.emitir(e)
+            if self.agente is not None:
+                await self.agente.enviar({"type": "UpdatePrompt", "prompt": f"LECCIÓN APRENDIDA: {regla}"})
 
     # ------------------------------- T4 tools -------------------------------
 

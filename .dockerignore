@@ -30,3 +30,5 @@ data/kb
 .idea
 docs
 tests
+data/*.db
+data/*.db-*
