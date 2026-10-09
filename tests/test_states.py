@@ -56,3 +56,8 @@ def test_eventos_repetidos_no_emiten_otro_cambio():
     assert cambios[1] is None
     m, cambios = recorrer(V.USUARIO_HABLA, V.USUARIO_TERMINA, V.TOOL_PEDIDA, V.TOOL_PEDIDA)
     assert cambios[-1] is None
+
+
+def test_audio_tardio_del_turno_interrumpido_no_vuelve_a_hablando():
+    m, cambios = recorrer(V.AGENTE_HABLA, V.USUARIO_HABLA, V.AGENTE_HABLA, V.USUARIO_TERMINA)
+    assert cambios[2] is None and cambios[3].estado is E.PENSANDO

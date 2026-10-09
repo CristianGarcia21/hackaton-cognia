@@ -11,6 +11,7 @@ load_dotenv()
 # Sin esto los logs "cognia.*" no salen (uvicorn solo configura los suyos) y en Railway no se ve nada.
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # una línea por consulta a la API ensucia los logs
+logging.getLogger("websockets").setLevel(logging.INFO)  # en DEBUG registra cabeceras: la key de Deepgram
 
 RAIZ = Path(__file__).resolve().parent.parent
 WEB_DIR = RAIZ / "web"

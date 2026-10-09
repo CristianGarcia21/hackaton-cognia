@@ -30,6 +30,7 @@ log = logging.getLogger("cognia.session")
 E = ev.EstadoConversacion
 MAX_AUDIO_EN_COLA = 50  # ~1-2 s de micrófono: si Deepgram se atrasa, se descarta lo más viejo
 KEEPALIVE_S = 5.0       # sin audio (micrófono apagado o modo texto) Deepgram cierra tras ~10 s
+MAX_AUDIO_PENDIENTE = 480_000  # ~10 s de TTS (PCM16 24 kHz): si el navegador va más lento, se descarta
 
 
 class _Fin(Exception):
@@ -53,6 +54,7 @@ class Sesion:
         self.transcribir_usuario = True  # el STT diarizado (#11) lo apaga para no duplicar el panel
         self.latencias: dict[str, float] = {}  # último LatencyReport (para la traza, #19)
         self._salida: asyncio.Queue = asyncio.Queue()
+        self._audio_pendiente = 0  # bytes de TTS en _salida (los eventos JSON nunca se descartan)
         self._audio: asyncio.Queue[bytes] = asyncio.Queue(MAX_AUDIO_EN_COLA)
         self._tg: asyncio.TaskGroup | None = None
         self._tarea_agente: asyncio.Task | None = None
@@ -64,6 +66,11 @@ class Sesion:
 
     def emitir(self, evento) -> None:
         """Encola un evento para el navegador (no bloquea; lo escribe T7)."""
+        if isinstance(evento, _Audio):
+            if self._audio_pendiente + len(evento.pcm) > MAX_AUDIO_PENDIENTE:
+                log.warning("Sesión %s: navegador lento, se descarta audio TTS", self.session_id)
+                return
+            self._audio_pendiente += len(evento.pcm)
         self._salida.put_nowait(evento)
 
     async def correr(self, iniciales: list) -> None:
@@ -85,6 +92,8 @@ class Sesion:
     async def _emisor(self) -> None:
         while True:
             item = await self._salida.get()
+            if isinstance(item, _Audio):
+                self._audio_pendiente -= len(item.pcm)
             try:
                 if isinstance(item, _Audio):
                     if item.turn_id == self.maquina.turn_id:  # audio de un turno interrumpido: se descarta
@@ -104,7 +113,10 @@ class Sesion:
                 raise
             except Exception:  # noqa: BLE001
                 log.exception("Error en %s (sesión %s)", nombre, self.session_id)
-        return self._tg.create_task(segura(), name=nombre)
+        tarea = self._tg.create_task(segura(), name=nombre)
+        # Cancelada antes de empezar: la corrutina nunca corrió; cerrarla evita el "never awaited".
+        tarea.add_done_callback(lambda t: coro.close() if t.cancelled() else None)
+        return tarea
 
     # ------------------------------- T1 receptor -------------------------------
 
@@ -156,10 +168,15 @@ class Sesion:
         except ErrorAgente as e:
             log.warning("Sesión %s sin voz: %s", self.session_id, e)
             self.emitir(ev.ErrorEvento(where="voz", message=f"La voz no está disponible: {e}", recoverable=True))
-            self._listo.set()  # lo pendiente se descarta: no hay agente
             return
+        except Exception:  # noqa: BLE001 — un bug al preparar la sesión: avisar en vez de quedar mudo
+            log.exception("Sesión %s: error abriendo Deepgram", self.session_id)
+            self.emitir(ev.ErrorEvento(where="voz", message="La voz no está disponible por un error interno",
+                                       recoverable=True))
+            return
+        finally:
+            self._listo.set()  # lo pendiente se envía o, si no hay agente, se descarta
         log.info("Sesión %s conectada a Deepgram (%s)", self.session_id, self.agente.request_id)
-        self._listo.set()
         envio = self._tarea(self._enviar_audio(), "T2-audio")
         try:
             async for m in self.agente:
@@ -198,6 +215,8 @@ class Sesion:
                 return  # la conexión se cerró: la tarea del agente ya lo detectó y avisa a la UI
 
     def _audio_del_agente(self, pcm: bytes) -> None:
+        if self.maquina.estado is E.ESCUCHANDO:
+            return  # resto del turno interrumpido que aún venía en camino: no se reproduce
         if self.maquina.estado is not E.HABLANDO:
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
         self.emitir(_Audio(self.maquina.turn_id, pcm))
@@ -239,6 +258,8 @@ class Sesion:
                 self.emitir(ev.Transcript(segment_id=f"u-{self._segmentos}", turn_id=turno, speaker="Hablante 1",
                                           text=texto, is_final=True))
         elif rol == "assistant":
+            if self.maquina.estado is E.ESCUCHANDO:
+                turno -= 1  # texto del turno interrumpido: se muestra en su turno, no cambia el estado
             self._cambio(self.maquina.aplicar(Evento.AGENTE_HABLA))
             self.emitir(ev.AgentText(turn_id=turno, text=texto))
             self.emitir(ev.Transcript(segment_id=f"a-{self._segmentos}", turn_id=turno, speaker="Agente",
@@ -258,8 +279,17 @@ class Sesion:
     def _pedir_tool(self, f: dict) -> None:
         self._cambio(self.maquina.aplicar(Evento.TOOL_PEDIDA))
         fid = f.get("id") or ""
-        self._tools[fid] = self._tarea(self._ejecutar_tool(fid, f.get("name") or "", f.get("arguments")),
-                                       f"T4-{f.get('name')}")
+        tarea = self._tarea(self._ejecutar_tool(fid, f.get("name") or "", f.get("arguments")), f"T4-{f.get('name')}")
+        self._tools[fid] = tarea
+        # Callback y no `finally`: también corre si la tarea se cancela antes de empezar (request y
+        # FunctionCallCancelled en el mismo lote), y así ninguna tool queda "pendiente" para siempre.
+        tarea.add_done_callback(lambda t, fid=fid: self._tool_terminada(fid, t))
+
+    def _tool_terminada(self, fid: str, tarea: asyncio.Task) -> None:
+        if self._tools.get(fid) is tarea:
+            del self._tools[fid]
+            if not self._tools:
+                self._cambio(self.maquina.aplicar(Evento.TOOL_RESPONDIDA))
 
     async def _ejecutar_tool(self, fid: str, nombre: str, argumentos) -> None:
         turno = self.maquina.turn_id
@@ -272,13 +302,11 @@ class Sesion:
             if self.agente is not None:
                 await self.agente.enviar({"type": "FunctionCallResponse", "id": fid, "name": nombre,
                                           "content": r.texto})
+            # Ya: "pensando" debe verse antes de que Deepgram empiece a hablar con este resultado.
+            self._tool_terminada(fid, asyncio.current_task())
         except asyncio.CancelledError:
             # FunctionCallCancelled o barge-in: Deepgram descarta una respuesta tardía; no se envía nada.
             self.emitir(ev.ToolCall(turn_id=turno, name=nombre, args=args, status="cancelled"))
-        finally:
-            self._tools.pop(fid, None)
-            if not self._tools:
-                self._cambio(self.maquina.aplicar(Evento.TOOL_RESPONDIDA))
 
 
 def _args_para_ui(argumentos) -> dict:

@@ -330,3 +330,57 @@ def test_la_difusion_llega_a_la_sesion():
 @pytest.mark.parametrize("argumentos,esperado", [('{"a": 1}', {"a": 1}), ("roto", {}), ("[1]", {}), (None, {})])
 def test_args_para_ui(argumentos, esperado):
     assert S._args_para_ui(argumentos) == esperado
+
+
+# ------------------------------- revisión QA de #10 -------------------------------
+
+def test_tool_pedida_y_cancelada_en_el_mismo_lote_no_queda_pendiente():
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.agente is not None)
+        agente.empujar({"type": "UserStartedSpeaking"},
+                       {"type": "ConversationText", "role": "user", "content": "uno"},
+                       {"type": "FunctionCallRequest", "functions": [
+                           {"id": "x1", "name": "lenta", "arguments": "{}", "client_side": True}]},
+                       {"type": "FunctionCallCancelled", "functions": [{"id": "x1", "name": "lenta"}]})
+        await esperar(lambda: not sesion._tools and ("escuchando", 1) in ws.estados()[-1:])
+        ws.texto({"type": "text_input", "text": "dos"})  # el turno siguiente con tool fluye normal
+        await esperar(lambda: ("inactivo", 2) in ws.estados())
+
+    ws, _, _ = correr(con_sesion(prueba))
+    assert ("pensando", 2) in ws.estados()
+
+
+def test_audio_que_llega_tras_la_interrupcion_no_se_reproduce():
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "start"})
+        await esperar(lambda: sesion.agente is not None)
+        agente.empujar(b"\x01\x00" * 100)
+        await esperar(lambda: ("hablando", 0) in ws.estados())
+        agente.empujar({"type": "UserStartedSpeaking"}, b"\x02\x00" * 100,
+                       {"type": "ConversationText", "role": "assistant", "content": "resto viejo"},
+                       {"type": "ConversationText", "role": "user", "content": "otra cosa"})
+        await esperar(lambda: ("pensando", 1) in ws.estados())
+
+    ws, _, _ = correr(con_sesion(prueba))
+    assert all(b"\x02" not in b for b in ws.audio) and ("hablando", 1) not in ws.estados()
+    assert [t.turn_id for t in ws.de_tipo(ev.AgentText) if t.text == "resto viejo"] == [0]
+
+
+def test_audio_pendiente_tiene_tope_si_el_navegador_es_lento(monkeypatch):
+    monkeypatch.setattr(S, "MAX_AUDIO_PENDIENTE", 1000)
+    sesion = S.Sesion(WSFalso(), "s1", None, None)
+    for _ in range(5):
+        sesion.emitir(S._Audio(0, b"\x00" * 400))
+    sesion.emitir(ev.SourceStatus(source="datos.gov.co", status="listo"))  # los eventos nunca se descartan
+    assert sesion._salida.qsize() == 3 and sesion._audio_pendiente == 800
+
+
+def test_un_bug_al_abrir_deepgram_avisa_y_no_deja_mensajes_colgados():
+    async def prueba(ws, sesion, agente):
+        ws.texto({"type": "text_input", "text": "hola"})
+        await esperar(lambda: ws.de_tipo(ev.ErrorEvento))
+        await esperar(lambda: sesion._listo.is_set())
+
+    ws, _, _ = correr(con_sesion(prueba, falla=RuntimeError("bug")))
+    assert ws.de_tipo(ev.ErrorEvento)[0].where == "voz"
