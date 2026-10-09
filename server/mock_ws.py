@@ -259,7 +259,7 @@ GUION_MARIA = guion_maria()
 
 def create_app(velocidad: float = 1.0, auto: bool = False) -> FastAPI:
     """velocidad: divide las pausas y el ritmo del audio (0 = sin esperas, para los tests)."""
-    app = FastAPI(title="Cognia · mock de /ws/voz")
+    app = FastAPI(title="Kognia · mock de /ws/voz")
 
     async def esperar(s: float) -> None:
         if velocidad > 0:
@@ -288,8 +288,8 @@ def create_app(velocidad: float = 1.0, auto: bool = False) -> FastAPI:
 
     @app.get("/api/calendario.ics")
     async def calendario() -> Response:
-        ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Cognia//mock//ES\r\nBEGIN:VEVENT\r\n"
-               "UID:mock-7@cognia\r\nDTSTART:20261013T080000\r\nDURATION:PT30M\r\n"
+        ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Kognia//mock//ES\r\nBEGIN:VEVENT\r\n"
+               "UID:mock-7@kognia\r\nDTSTART:20261013T080000\r\nDURATION:PT30M\r\n"
                "SUMMARY:Solicitud de cita (pendiente de confirmación por la IPS)\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
         return Response(ics, media_type="text/calendar")
 

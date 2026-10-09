@@ -1,8 +1,8 @@
-# Arquitectura de Cognia
+# Arquitectura de Kognia
 
 ## Resumen
 
-Cognia es una **arquitectura por capas, modular y extensible por registro**. Toma ideas de la
+Kognia es una **arquitectura por capas, modular y extensible por registro**. Toma ideas de la
 arquitectura hexagonal (puertos y adaptadores), pero sin formalizarla con interfaces explícitas, porque
 en una hackatón cada capa extra cuesta tiempo. La regla principal es que **las dependencias apuntan hacia
 el núcleo**: la UI conoce a los agentes y los agentes conocen al núcleo, pero el núcleo no conoce a nadie.

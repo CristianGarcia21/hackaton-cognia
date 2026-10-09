@@ -1,6 +1,6 @@
 # Contexto para asistentes de IA (Claude Code, Cursor, Copilot, Codex...)
 
-Cognia es una base multi-agente para una hackatón cuyo reto se conoce el mismo día.
+Kognia es una base multi-agente para una hackatón cuyo reto se conoce el mismo día.
 La infraestructura (LLM con fallback, agentes, orquestación, RAG, tools, UI) ya está hecha y probada.
 
 ## RETO ACTUAL: Agente Vocal Cognitivo (léelo primero)

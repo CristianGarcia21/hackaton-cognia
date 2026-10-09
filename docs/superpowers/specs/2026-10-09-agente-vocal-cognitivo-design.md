@@ -5,7 +5,7 @@
 | **Fecha** | 2026-10-09 |
 | **Equipo** | 2 personas · menos de 8 horas |
 | **Estado** | Diseño aprobado en conversación, pendiente de revisar el spec escrito |
-| **Base** | Repositorio Cognia (`core/`: LLM con fallback, `Tool`, receta MCP en `docs/MCP.md`) |
+| **Base** | Repositorio Kognia (`core/`: LLM con fallback, `Tool`, receta MCP en `docs/MCP.md`) |
 
 ---
 
@@ -100,7 +100,7 @@ hacia arriba: primero P2 y luego P1.
    GitHub Actions: agente de pruebas QA → modo texto contra la URL pública → reporte
 ```
 
-**Principio:** Deepgram se ocupa de la voz; Cognia del razonamiento, la adaptación, la verificación y
+**Principio:** Deepgram se ocupa de la voz; Kognia del razonamiento, la adaptación, la verificación y
 las integraciones. Cada sistema externo es un servidor MCP que se puede separar por configuración
 (`stdio` → `http`).
 
@@ -111,7 +111,7 @@ las integraciones. Cada sistema externo es un servidor MCP que se puede separar 
 - **Extensibilidad:** cambiar `MCPConnection.stdio("mcp_servers/citas.py")` por
   `MCPConnection.http("https://…/mcp")` separa un servicio sin tocar el agente.
 
-### 4.3 Estructura de carpetas (nueva, junto a la base Cognia)
+### 4.3 Estructura de carpetas (nueva, junto a la base Kognia)
 
 ```
 server/

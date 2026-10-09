@@ -1,4 +1,4 @@
-# Cognia: base multi-agente para hackatón
+# Kognia: base multi-agente para hackatón
 
 Esqueleto listo para resolver un reto de agentes de IA. Los modelos, el fallback entre proveedores,
 las herramientas, el RAG, la orquestación y la UI ya funcionan; el día del reto solo editas `agents/reto.py`.

@@ -14,7 +14,7 @@ from core.orchestrator import PlanExecute, Router, Supervisor
 UPLOADS = Path("data/uploads")
 UPLOADS.mkdir(parents=True, exist_ok=True)
 
-st.set_page_config(page_title="Cognia", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="Kognia", page_icon="🧠", layout="wide")
 
 state = st.session_state
 state.setdefault("messages", [])  # {"role", "content", "steps"}
@@ -31,7 +31,7 @@ MODES = {
 
 # ---------------- Barra lateral ----------------
 with st.sidebar:
-    st.title("🧠 Cognia")
+    st.title("🧠 Kognia")
 
     with st.expander("🔑 Proveedores", expanded=not config.available_models()):
         for name, cfg in config.PROVIDERS.items():

@@ -26,7 +26,7 @@ log = logging.getLogger("cognia.server")
 componentes: dict[str, bool] = {}
 
 # Sin /docs ni /openapi.json públicos en la URL del jurado.
-app = FastAPI(title="Cognia · Agente Vocal Cognitivo", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Kognia · Agente Vocal Cognitivo", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.get("/api/health")

@@ -1,4 +1,4 @@
-# MCP en Cognia
+# MCP en Kognia
 
 > **Estado:** no está implementado en el código, a propósito. Esta guía deja la receta lista y
 > **probada** (SDK `mcp` 2.3, octubre de 2026) para agregarlo en minutos si el reto lo pide.
@@ -43,7 +43,7 @@ uv add mcp
 Copia este archivo tal cual:
 
 ```python
-"""Adaptador MCP: convierte las herramientas de un servidor MCP en Tool de Cognia.
+"""Adaptador MCP: convierte las herramientas de un servidor MCP en Tool de Kognia.
 
     from core.tools.mcp import MCPConnection
     fs = MCPConnection.stdio("npx", ["-y", "@modelcontextprotocol/server-filesystem", "."])
@@ -183,7 +183,7 @@ from mcp.server.mcpserver import MCPServer
 from agents import TEAMS
 from core.orchestrator import Supervisor
 
-mcp = MCPServer("cognia", instructions="Equipo de agentes de IA para <describe el reto>.")
+mcp = MCPServer("kognia", instructions="Equipo de agentes de IA para <describe el reto>.")
 
 @mcp.tool()
 def preguntar_equipo(tarea: str) -> str:
@@ -200,7 +200,7 @@ Para conectarlo a Claude Desktop o Cursor, agrégalo a su configuración de serv
 ```json
 {
   "mcpServers": {
-    "cognia": {
+    "kognia": {
       "command": "uv",
       "args": ["run", "--directory", "D:/Hackaton/cognia", "python", "mcp_server.py"]
     }
