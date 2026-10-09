@@ -204,6 +204,9 @@ class HerramientasIPS:
     async def _seguro(self, coro) -> str:
         """Ejecuta el cuerpo de una tool y convierte TODA falla en texto (contrato Tool: nunca lanzar).
         CancelledError no hereda de Exception: una interrupción de voz se propaga normalmente."""
+        if self.catalogo is None:  # el servidor arrancó pero datos.gov.co aún no entrega el catálogo
+            coro.close()
+            return "Error: los datos de datos.gov.co se están cargando todavía. Intenta en unos segundos."
         try:
             return await coro
         except FuenteNoDisponible as e:

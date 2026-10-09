@@ -7,6 +7,7 @@ Como proceso aparte (stdio, p. ej. Claude Desktop o un hub en otra máquina):
 
 import inspect
 from contextlib import asynccontextmanager
+from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
@@ -21,19 +22,34 @@ def crear_servidor(herramientas: HerramientasIPS) -> MCPServer:
     """Servidor MCP con las tools de un HerramientasIPS ya inicializado (modo en proceso: lo usa el hub)."""
     mcp = MCPServer("ips", instructions=INSTRUCCIONES)
     for t in herramientas.tools():
-        mcp.add_tool(t.fn, name=t.name, description=t.description)
-        _copiar_descripciones(mcp, t)
+        _registrar(mcp, t, t.fn)
     return mcp
 
 
-def _copiar_descripciones(mcp: MCPServer, t) -> None:
-    """El SDK arma el inputSchema desde la firma y pierde las descripciones de `Args:` del docstring.
-    Se copian desde el contrato Tool para que el LLM vea lo mismo por MCP que por el contrato."""
-    registrada = mcp._tool_manager.get_tool(t.name)
-    props = (registrada.parameters or {}).get("properties", {})
-    for nombre, esquema in t.parameters.get("properties", {}).items():
-        if nombre in props and esquema.get("description"):
-            props[nombre]["description"] = esquema["description"]
+def _registrar(mcp: MCPServer, t, fn) -> None:
+    """Registra la tool con una firma PERMISIVA (todo `Any`) y anuncia el esquema del contrato Tool.
+
+    El SDK valida los argumentos contra la firma ANTES de llamar: con `Literal[...]` rechazaría
+    "publica" o nivel=2, que la tool sí sabe normalizar (y mostraría un error de Pydantic en inglés).
+    El esquema anunciado sigue siendo el del contrato (enum, descripciones de `Args:`), así que el LLM
+    ve lo mismo por MCP que por el contrato y la tool conserva su validación en español."""
+    mcp.add_tool(_permisiva(t.name, fn), name=t.name, description=t.description)
+    mcp._tool_manager.get_tool(t.name).parameters = t.parameters
+
+
+def _permisiva(nombre: str, fn):
+    """Función con los mismos parámetros y defaults que `fn`, pero anotados como Any."""
+    firma = inspect.signature(fn)
+    firma = firma.replace(parameters=[p.replace(annotation=Any) for p in firma.parameters.values()],
+                          return_annotation=str)
+
+    async def llamar(**kwargs):
+        return await fn(**kwargs)
+
+    llamar.__name__ = nombre
+    llamar.__signature__ = firma
+    llamar.__annotations__ = {p.name: Any for p in firma.parameters.values()} | {"return": str}
+    return llamar
 
 
 def crear_servidor_autonomo() -> MCPServer:
@@ -52,8 +68,7 @@ def crear_servidor_autonomo() -> MCPServer:
     mcp = MCPServer("ips", instructions=INSTRUCCIONES, lifespan=lifespan)
     plantilla = HerramientasIPS(None, None)  # solo para leer firmas y docstrings
     for t in plantilla.tools():
-        mcp.add_tool(_delegar(t.name, estado, inspect.signature(t.fn)), name=t.name, description=t.description)
-        _copiar_descripciones(mcp, t)
+        _registrar(mcp, t, _delegar(t.name, estado, inspect.signature(t.fn)))
     return mcp
 
 
@@ -64,7 +79,6 @@ def _delegar(nombre: str, estado: dict, firma: inspect.Signature):
 
     llamar.__name__ = nombre
     llamar.__signature__ = firma
-    llamar.__annotations__ = {p.name: p.annotation for p in firma.parameters.values()} | {"return": str}
     return llamar
 
 

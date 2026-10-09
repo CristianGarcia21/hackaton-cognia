@@ -6,8 +6,9 @@
 - GET  /api/ready    READINESS: 200 solo cuando todos los componentes están listos, si no 503
 - WS   /ws/voz       contrato en server/events.py
 
-Esqueleto (issue #2): la sesión real con Deepgram llega en #10; por ahora el WebSocket responde
-`ready`, valida los mensajes del cliente y contesta `text_input` con un eco.
+Al arrancar: catálogo de datos.gov.co (en segundo plano) y hub MCP con las tools (#9). La sesión real
+con Deepgram llega en #10; por ahora el WebSocket responde `ready`, valida los mensajes del cliente y
+contesta `text_input` con un eco.
 """
 
 import asyncio
@@ -22,7 +23,10 @@ from fastapi.staticfiles import StaticFiles
 
 from server import config
 from server import events as ev
+from server import tools_registry
 from server.data import datos_gov
+from server.mcp_hub import HubMCP
+from server.tools.ips import HerramientasIPS
 
 log = logging.getLogger("cognia.server")
 
@@ -40,6 +44,8 @@ class Estado:
     datos: datos_gov.ClienteDatosGov | None = None
     catalogo: datos_gov.Catalogo | None = None
     fuente: ev.SourceStatus | None = None  # último estado de la fuente: se envía a cada sesión nueva
+    ips: HerramientasIPS | None = None  # tools de IPS: reciben el catálogo cuando termina de cargar
+    hub: HubMCP | None = None  # servidores MCP; sus tools van al Voice Agent (server/tools_registry.py)
     conexiones: set[WebSocket] = field(default_factory=set)
 
 
@@ -67,6 +73,8 @@ async def _conectar_datos_gov() -> None:
     while estado.catalogo is None:
         try:
             estado.catalogo = await datos_gov.cargar_catalogo(estado.datos, on_status=progreso)
+            if estado.ips is not None:
+                estado.ips.catalogo = estado.catalogo
             componentes["datos_gov"] = True
         except datos_gov.FuenteNoDisponible as e:  # caída de la API: /api/ready queda en 503 y se reintenta
             log.warning("datos.gov.co no disponible (%s); reintento en %ss", e, REINTENTO_DATOS_S)
@@ -81,11 +89,19 @@ async def lifespan(_app: FastAPI):
     estado.datos = datos_gov.ClienteDatosGov()
     # En segundo plano: /api/health responde mientras se consulta la API.
     tarea = asyncio.create_task(_conectar_datos_gov())
-    yield
-    tarea.cancel()
-    with suppress(asyncio.CancelledError):
-        await tarea
-    await estado.datos.aclose()
+    # Hub MCP: las tools de IPS existen desde ya y responden "cargando" hasta que llega el catálogo.
+    estado.ips = HerramientasIPS(estado.datos, estado.catalogo)
+    estado.hub = HubMCP()
+    tools_registry.registrar_servidores(estado.hub, estado.ips)
+    await estado.hub.iniciar()
+    try:
+        yield
+    finally:
+        await estado.hub.cerrar()
+        tarea.cancel()
+        with suppress(asyncio.CancelledError):
+            await tarea
+        await estado.datos.aclose()
 
 
 # Sin /docs ni /openapi.json públicos en la URL del jurado.
@@ -93,15 +109,23 @@ app = FastAPI(title="Kognia · Agente Vocal Cognitivo", docs_url=None, redoc_url
               lifespan=lifespan)
 
 
+def _componentes() -> dict[str, bool]:
+    if estado.hub is not None:  # el hub cambia solo (reconexiones): se lee en cada consulta
+        componentes["mcp"] = estado.hub.listo()
+    return componentes
+
+
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok" if all(componentes.values()) else "degradado", "componentes": componentes}
+    c = _componentes()
+    return {"status": "ok" if all(c.values()) else "degradado", "componentes": c}
 
 
 @app.get("/api/ready")
 def ready() -> JSONResponse:
-    listo = all(componentes.values())
-    return JSONResponse({"ready": listo, "componentes": componentes}, status_code=200 if listo else 503)
+    c = _componentes()
+    listo = all(c.values())
+    return JSONResponse({"ready": listo, "componentes": c}, status_code=200 if listo else 503)
 
 
 async def _enviar(ws: WebSocket, evento) -> None:

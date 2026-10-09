@@ -204,3 +204,26 @@ def test_difundir_no_se_bloquea_con_un_cliente_colgado(monkeypatch):
         return time.perf_counter() - inicio
     assert asyncio.run(correr()) < 1
     assert len(rapido.recibidos) == 1
+
+
+# ------------------------------- hub MCP (#9) -------------------------------
+
+def test_al_arrancar_conecta_el_hub_mcp_con_las_tools_de_ips(client):
+    assert client.get("/api/health").json()["componentes"]["mcp"] is True
+    nombres = {t.nombre for t in main.estado.hub.tools()}
+    assert {"describir_datos", "buscar_ips", "contar_capacidad", "detalle_ips"} <= nombres
+
+
+def test_las_tools_usan_el_catalogo_cuando_termina_de_cargar(client):
+    assert main.estado.ips.catalogo is main.estado.catalogo is not None
+
+
+def test_si_el_hub_se_cae_health_queda_degradado(client):
+    servidor = main.estado.hub._servidores["ips"]
+    cliente, servidor.cliente = servidor.cliente, None
+    try:
+        r = client.get("/api/health").json()
+        assert r["status"] == "degradado" and r["componentes"]["mcp"] is False
+        assert client.get("/api/ready").status_code == 503
+    finally:
+        servidor.cliente = cliente

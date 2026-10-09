@@ -92,7 +92,7 @@ hacia arriba: primero P2 y luego P1.
 │   T7 emisor único de eventos al navegador                                    │
 │  Capa cognitiva: brief · emociones · adaptación · verificador · lecciones ·  │
 │                  traza  (core/llm.py async + Groq)                           │
-│  Hub MCP (clientes async, subprocesos stdio lanzados al arrancar):           │
+│  Hub MCP (clientes async; en proceso por defecto, stdio/http por config):    │
 │   mcp_servers/ips.py · citas.py (SQLite) · excel.py · calendario.py          │
 └──────┬───────────────────────────────────────────────────────────────────────┘
        ▼ bajo demanda: cada tool consulta SODA3 (caché de resultados + catálogo de búsqueda)
@@ -123,7 +123,7 @@ server/
   deepgram_agent.py    cliente del Voice Agent (Settings, Update*, Inject*, eventos)
   deepgram_stt.py      cliente STT con diarización
   tools_registry.py    definiciones de funciones para el Voice Agent ↔ tools MCP
-  mcp_hub.py           clientes MCP async (abre, supervisa y reinicia subprocesos)
+  mcp_hub.py           clientes MCP async (abre, supervisa y reconecta; caché por argumentos)
   cognition/
     brief.py           estadísticas del dataset + brief y preguntas (LLM)
     emotions.py        análisis de emociones por turno (LLM estructurado)
@@ -282,6 +282,8 @@ Usamos **tools tipadas** y **búsqueda difusa** (`rapidfuzz`) para corregir los 
 transcribe mal.
 
 ## 8. Tools y servidores MCP
+
+**Hub (`server/mcp_hub.py`, #9):** cada servidor se registra con una línea en `server/tools_registry.py` (`registrar_servidores`). El origen es lo que acepta `mcp.Client`: un `MCPServer` **en proceso** (por defecto, porque Render Free tiene 512 MB y cada subproceso de Python cuesta unos 80 MB), `StdioServerParameters` (subproceso) o una URL. Una tarea por servidor mantiene la conexión y la reabre con espera creciente si se cae. Las lecturas puras (`cacheable=True`, IPS) se cachean por argumentos durante 10 min. Los servidores registran sus tools con firma permisiva y anuncian el esquema del contrato `@tool`, para que el SDK no rechace con Pydantic valores que la tool sabe normalizar.
 
 Las funciones se declaran en `agent.think.functions` **sin `endpoint`**, así que se ejecutan en el
 cliente, es decir, en nuestro backend. El backend las despacha al MCP correspondiente.
