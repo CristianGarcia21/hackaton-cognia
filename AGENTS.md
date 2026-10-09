@@ -1,8 +1,24 @@
 # Contexto para asistentes de IA (Claude Code, Cursor, Copilot, Codex...)
 
 Cognia es una base multi-agente para una hackatón cuyo reto se conoce el mismo día.
-La infraestructura (LLM con fallback, agentes, orquestación, RAG, tools, UI) ya está hecha y probada:
-**el trabajo del reto va casi siempre en `agents/reto.py` y en tools nuevas**, no en `core/`.
+La infraestructura (LLM con fallback, agentes, orquestación, RAG, tools, UI) ya está hecha y probada.
+
+## RETO ACTUAL: Agente Vocal Cognitivo (léelo primero)
+
+El reto **ya se conoce** y cambia dónde se trabaja. **Antes de tocar código lee**
+`docs/superpowers/specs/2026-10-09-agente-vocal-cognitivo-design.md` (diseño aprobado) y `docs/RETO.md`
+(guía del equipo).
+
+- Agente de voz en tiempo real (Deepgram Voice Agent + Groq) sobre los datos de las IPS de datos.gov.co,
+  con integraciones MCP (citas en SQLite, Excel y calendario), emociones que adaptan al agente,
+  verificador QA, traza por turno y despliegue público en un contenedor.
+- **Código nuevo en:** `server/` (FastAPI asíncrono, sesión con máquina de estados), `mcp_servers/`,
+  `web/` (HTML/JS sin compilación) y `qa/`. **No** en `agents/reto.py` ni en `app.py` (Streamlit queda
+  fuera de este reto).
+- **Contrato del WebSocket** entre frontend y backend: spec §6, implementado en `server/events.py`. No
+  agregues eventos ni campos sin actualizar ambos.
+- El único cambio permitido en `core/` es agregar variantes async a `core/llm.py` (`achat`, `astructured`).
+- Prioridades P0/P1/P2 y plan por horas: spec §3 y §15. Si vas atrasado, recorta de P2 hacia P0.
 
 Stack: Python 3.12 · uv · LiteLLM (multi-proveedor) · Streamlit · Pydantic. Idioma del proyecto: español.
 
@@ -20,7 +36,8 @@ uv run python list_models.py     # modelos vigentes de cada proveedor
 
 | Quiero... | Archivo |
 |---|---|
-| Resolver el reto (agentes, prompts, contexto) | `agents/reto.py` |
+| Reto actual (voz, MCP, emociones, QA) | `server/`, `mcp_servers/`, `web/`, `qa/`, ver la spec |
+| Retos genéricos con la UI de Streamlit | `agents/reto.py` |
 | Nueva herramienta para los agentes | función con `@tool` en `agents/reto.py` o en `core/tools/<tema>.py` |
 | Nuevo equipo seleccionable en la UI | `agents/<equipo>.py` + registrar en `agents/__init__.py` (`TEAMS`) |
 | Cambiar/agregar modelos o proveedores | `core/config.py` (`PROVIDERS`) o `.env` (`DEFAULT_MODEL`, `FALLBACK_MODELS`) |
